@@ -44,7 +44,11 @@ const ChatPage = () => {
     
     // Initialize agent if we have project and user
     if (project && user && !agent) {
-      const newAgent = new OpenAIProblemUnderstandingAgent(project.id, user.id, supabase);
+      const newAgent = new OpenAIProblemUnderstandingAgent(
+        project.id,  // project_id
+        supabase,    // Supabase client
+        user.id      // user_id
+      );
       setAgent(newAgent);
       
       // Load existing context
