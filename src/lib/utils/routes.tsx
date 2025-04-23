@@ -1,7 +1,5 @@
 
 import { Navigate } from 'react-router-dom';
-import { useAuth } from '@/lib/context/AuthContext';
-import { useProject } from '@/lib/context/ProjectContext';
 import LoginPage from '@/pages/LoginPage';
 import RegisterPage from '@/pages/RegisterPage';
 import Index from '@/pages/Index';
@@ -12,95 +10,13 @@ import InterviewAssistantPage from '@/pages/InterviewAssistantPage';
 import InterviewSummaryPage from '@/pages/InterviewSummaryPage';
 import ConsolidatedInsightsPage from '@/pages/ConsolidatedInsightsPage';
 import NotFound from '@/pages/NotFound';
+import { ProtectedRoute, PublicRoute, SmartRedirectRoute } from '@/App';
 
 interface RouteConfig {
   path: string;
   element: JSX.Element;
   children?: RouteConfig[];
 }
-
-export const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
-  const { user, isLoading } = useAuth();
-
-  if (isLoading) {
-    // You could render a loading spinner here
-    return <div className="h-screen w-full flex items-center justify-center bg-insight-dark">
-      <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
-    </div>;
-  }
-
-  if (!user) {
-    return <Navigate to="/login" />;
-  }
-
-  return <>{children}</>;
-};
-
-export const PublicRoute = ({ children }: { children: React.ReactNode }) => {
-  const { user, isLoading } = useAuth();
-
-  if (isLoading) {
-    return <div className="h-screen w-full flex items-center justify-center bg-insight-dark">
-      <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
-    </div>;
-  }
-
-  if (user) {
-    return <Navigate to="/dashboard" />;
-  }
-
-  return <>{children}</>;
-};
-
-export const SmartRedirectRoute = ({ children }: { children: React.ReactNode }) => {
-  const { user, isLoading } = useAuth();
-  const { currentProject, problemContext, isLoading: projectLoading } = useProject();
-  
-  if (isLoading || projectLoading) {
-    return <div className="h-screen w-full flex items-center justify-center bg-insight-dark">
-      <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
-    </div>;
-  }
-  
-  if (!user) {
-    return <Navigate to="/login" />;
-  }
-  
-  // If the user doesn't have a project yet, send to dashboard
-  if (!currentProject) {
-    return <Navigate to="/dashboard" />;
-  }
-  
-  // Check the current_phase field to determine where to redirect
-  if (currentProject.current_phase === 'problem_validation') {
-    return <Navigate to="/chat" />;
-  }
-  
-  if (currentProject.current_phase === 'analysis') {
-    return <Navigate to="/analysis" />;
-  }
-  
-  // If we don't have a specific phase but problem understanding is not completed,
-  // send to chat
-  if (!problemContext || !problemContext.finalStatement) {
-    // Update the current phase to problem_validation
-    return <Navigate to="/chat" />;
-  }
-  
-  // If problem understanding is completed but analysis is not, send to analysis
-  if (currentProject.progress.market_research === 'pending' || 
-      currentProject.progress.competitor_analysis === 'pending' ||
-      currentProject.progress.feature_analysis === 'pending' ||
-      currentProject.progress.customer_insights === 'pending' ||
-      currentProject.progress.customer_personas === 'pending' ||
-      currentProject.progress.opportunity_mapping === 'pending') {
-    // Update the current phase to analysis
-    return <Navigate to="/analysis" />;
-  }
-  
-  // If everything is completed, render the children
-  return <>{children}</>;
-};
 
 const getRoutes = (): RouteConfig[] => [
   {

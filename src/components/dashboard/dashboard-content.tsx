@@ -1,4 +1,3 @@
-
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GlassCard } from "@/components/ui/glass-card";
@@ -10,6 +9,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { BarChart2, Users, Hexagon, FileSearch, Lightbulb, ChevronRight, Activity } from "lucide-react";
 import { supabase } from "@/lib/supabase/client";
+import { toast } from "sonner";
 
 export function DashboardContent() {
   const { currentProject, problemContext, fetchProblemContext } = useProject();
@@ -24,6 +24,28 @@ export function DashboardContent() {
 
   useEffect(() => {
     if (!currentProject) return;
+    
+    // Check if problem understanding is completed
+    if (!problemContext?.finalStatement) {
+      toast.info("Let's start by understanding your problem");
+      navigate('/chat');
+      return;
+    }
+
+    // Check if analysis pipeline needs to be run
+    const shouldRunAnalysis = 
+      currentProject.progress.market_research === 'pending' || 
+      currentProject.progress.competitor_analysis === 'pending' ||
+      currentProject.progress.feature_analysis === 'pending' ||
+      currentProject.progress.customer_insights === 'pending' ||
+      currentProject.progress.customer_personas === 'pending' ||
+      currentProject.progress.opportunity_mapping === 'pending';
+
+    if (shouldRunAnalysis) {
+      toast.info("Let's run the analysis pipeline for your project");
+      navigate('/analysis');
+      return;
+    }
 
     const fetchAllData = async () => {
       setIsLoading(true);
@@ -96,7 +118,7 @@ export function DashboardContent() {
     };
 
     fetchAllData();
-  }, [currentProject, fetchProblemContext, problemContext]);
+  }, [currentProject, fetchProblemContext, problemContext, navigate]);
 
   const handleStartChat = () => {
     navigate('/chat');

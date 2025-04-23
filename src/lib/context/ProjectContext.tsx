@@ -46,6 +46,7 @@ interface ProjectContextType {
   setCurrentProject: (project: Project) => void;
   fetchProblemContext: (projectId: string) => Promise<void>;
   createProject: (name: string) => Promise<Project | null>;
+  updateProjectPhase: (projectId: string, phase: string) => Promise<void>;
 }
 
 const ProjectContext = createContext<ProjectContextType | undefined>(undefined);
@@ -147,6 +148,39 @@ export const ProjectProvider = ({ children }: { children: React.ReactNode }) => 
     }
   };
 
+  const updateProjectPhase = async (projectId: string, phase: string) => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      const { error } = await supabase
+        .from('projects')
+        .update({ current_phase: phase })
+        .eq('id', projectId);
+      
+      if (error) throw error;
+      
+      // Update the local state
+      setProjects(prevProjects =>
+        prevProjects.map(project =>
+          project.id === projectId ? { ...project, current_phase: phase } : project
+        )
+      );
+      
+      // Update currentProject if it's the one being modified
+      if (currentProject && currentProject.id === projectId) {
+        setCurrentProject({ ...currentProject, current_phase: phase });
+      }
+      
+    } catch (error: any) {
+      console.error('Error updating project phase:', error);
+      setError(error.message);
+      toast.error(`Failed to update project phase: ${error.message}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const createProject = async (name: string): Promise<Project | null> => {
     if (!user) return null;
     
@@ -169,7 +203,8 @@ export const ProjectProvider = ({ children }: { children: React.ReactNode }) => 
         .insert({ 
           name, 
           user_id: user.id,
-          progress: initialProgress
+          progress: initialProgress,
+          current_phase: 'problem_validation'
         })
         .select()
         .single();
@@ -233,6 +268,7 @@ export const ProjectProvider = ({ children }: { children: React.ReactNode }) => 
         setCurrentProject,
         fetchProblemContext,
         createProject,
+        updateProjectPhase,
       }}
     >
       {children}
