@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useProject } from '@/lib/context/ProjectContext';
@@ -85,9 +84,11 @@ const AnalysisPipelinePage = () => {
         
       if (error) {
         console.error("Error updating project phase:", error);
+        toast.error("Failed to update project phase");
       }
     } catch (error) {
       console.error("Error updating project phase:", error);
+      toast.error("Failed to update project phase");
     }
   };
 
@@ -106,6 +107,27 @@ const AnalysisPipelinePage = () => {
         .eq('id', currentProject.id);
         
       if (error) throw error;
+
+      // Check if all analysis steps are complete
+      const updatedProgress = {
+        ...currentProject.progress,
+        [stage]: status
+      };
+
+      const isComplete = 
+        updatedProgress.market_research === 'complete' &&
+        updatedProgress.competitor_analysis === 'complete' &&
+        updatedProgress.feature_analysis === 'complete' &&
+        updatedProgress.customer_insights === 'complete' &&
+        updatedProgress.customer_personas === 'complete' &&
+        updatedProgress.opportunity_mapping === 'complete';
+
+      if (isComplete) {
+        // Update phase to dashboard
+        await updateProjectPhase('dashboard');
+        // Navigate to dashboard
+        navigate('/dashboard');
+      }
     } catch (error) {
       console.error(`Error updating ${stage} status:`, error);
       toast.error(`Failed to update ${stage} status`);

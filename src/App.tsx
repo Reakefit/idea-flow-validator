@@ -1,4 +1,3 @@
-
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -61,24 +60,44 @@ const SmartRedirectRoute = ({ children }: { children: React.ReactNode }) => {
   if (!currentProject) {
     return <Navigate to="/dashboard" replace />;
   }
-  
-  // If problem understanding is not completed, send to chat
-  if (!problemContext || !problemContext.finalStatement) {
-    return <Navigate to="/chat" replace />;
+
+  // Get the current phase, defaulting to null if not set
+  const currentPhase = currentProject.current_phase || null;
+
+  // Handle navigation based on current phase
+  switch (currentPhase) {
+    case null:
+    case '':
+      // If no phase is set, check if problem understanding is completed
+      if (!problemContext || !problemContext.finalStatement) {
+        return <Navigate to="/chat" replace />;
+      }
+      // If problem is understood but no phase set, set it to analysis
+      return <Navigate to="/analysis" replace />;
+
+    case 'problem_understanding':
+      // If in problem understanding phase but it's completed, move to analysis
+      if (problemContext?.finalStatement) {
+        return <Navigate to="/analysis" replace />;
+      }
+      return <Navigate to="/chat" replace />;
+
+    case 'analysis':
+      // If analysis is completed, move to dashboard
+      if (currentProject.progress.market_research === 'complete' &&
+          currentProject.progress.competitor_analysis === 'complete' &&
+          currentProject.progress.feature_analysis === 'complete' &&
+          currentProject.progress.customer_insights === 'complete' &&
+          currentProject.progress.customer_personas === 'complete' &&
+          currentProject.progress.opportunity_mapping === 'complete') {
+        return <Navigate to="/dashboard" replace />;
+      }
+      return <Navigate to="/analysis" replace />;
+
+    default:
+      // For all other phases, render the children
+      return <>{children}</>;
   }
-  
-  // If problem understanding is completed but analysis is not, send to analysis
-  if (currentProject.progress.market_research === 'pending' || 
-      currentProject.progress.competitor_analysis === 'pending' ||
-      currentProject.progress.feature_analysis === 'pending' ||
-      currentProject.progress.customer_insights === 'pending' ||
-      currentProject.progress.customer_personas === 'pending' ||
-      currentProject.progress.opportunity_mapping === 'pending') {
-    return <Navigate to="/analysis" replace />;
-  }
-  
-  // If everything is completed, render the children
-  return <>{children}</>;
 };
 
 // PublicRoute component for pages that should not be accessible when logged in

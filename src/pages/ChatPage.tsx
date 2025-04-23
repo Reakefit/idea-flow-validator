@@ -16,6 +16,7 @@ import { OpenAIProblemUnderstandingAgent } from '@/lib/ai/openai-agent';
 interface Message {
   role: 'user' | 'assistant';
   content: string;
+  isTyping?: boolean;
 }
 
 const ChatPage = () => {
@@ -102,8 +103,8 @@ const ChatPage = () => {
         });
     }
 
-    if (project && project.current_phase !== 'problem_validation') {
-      updateProjectPhase('problem_validation');
+    if (project && (!project.current_phase || project.current_phase === '')) {
+      updateProjectPhase('problem_understanding');
     }
   }, [user, navigate, project, problemContext, agent]);
 
@@ -121,9 +122,11 @@ const ChatPage = () => {
 
       if (error) {
         console.error("Error updating project phase:", error);
+        toast.error("Failed to update project phase");
       }
     } catch (error) {
       console.error("Error updating project phase:", error);
+      toast.error("Failed to update project phase");
     }
   };
 
@@ -158,6 +161,8 @@ const ChatPage = () => {
     setInput('');
     setIsLoading(true);
 
+    setMessages(prev => [...prev, { role: 'assistant', content: '', isTyping: true }]);
+
     try {
       let result;
 
@@ -173,6 +178,8 @@ const ChatPage = () => {
         setIsLoading(false);
         return;
       }
+
+      setMessages(prev => prev.filter(msg => !msg.isTyping));
 
       if (result.completionMessage) {
         setMessages(prev => [...prev, {
@@ -214,6 +221,7 @@ const ChatPage = () => {
       }
     } catch (error) {
       console.error("Error processing message:", error);
+      setMessages(prev => prev.filter(msg => !msg.isTyping));
       setMessages(prev => [...prev, {
         role: 'assistant',
         content: "I'm sorry, there was an error processing your request."
@@ -242,7 +250,15 @@ const ChatPage = () => {
                     </Avatar>
                   )}
                   <div className={`rounded-md p-2 ${message.role === 'user' ? 'bg-blue-100 text-right' : 'bg-gray-100'}`}>
-                    <p className="text-sm">{message.content}</p>
+                    {message.isTyping ? (
+                      <div className="flex space-x-1">
+                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                      </div>
+                    ) : (
+                      <p className="text-sm">{message.content}</p>
+                    )}
                   </div>
                   {message.role === 'user' && (
                     <Avatar className="w-8 h-8 ml-2">
@@ -252,38 +268,26 @@ const ChatPage = () => {
                   )}
                 </div>
               ))}
-              {isLoading && (
-                <div className="flex items-center justify-center">
-                  <div className="flex space-x-2">
-                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
-                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
-                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }}></div>
-                  </div>
-                </div>
-              )}
               <div ref={messagesEndRef} />
             </div>
           </ScrollArea>
-        </CardContent>
-        <div className="p-4">
-          <div className="flex items-center space-x-2">
+          <Separator className="my-4" />
+          <div className="flex gap-2">
             <Input
-              type="text"
-              placeholder="Enter your message..."
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !isLoading) {
-                  handleSendMessage(input);
-                }
-              }}
+              onKeyPress={(e) => e.key === 'Enter' && handleSendMessage(input)}
+              placeholder="Type your message..."
               disabled={isLoading}
             />
-            <Button onClick={() => handleSendMessage(input)} disabled={isLoading}>
+            <Button 
+              onClick={() => handleSendMessage(input)}
+              disabled={isLoading || !input.trim()}
+            >
               Send
             </Button>
           </div>
-        </div>
+        </CardContent>
       </Card>
     </div>
   );
