@@ -15,11 +15,11 @@ export function convertToCustomerPersona(persona: Persona, projectId: string): C
       income: persona.demographics.income,
       education: persona.demographics.education
     },
-    pain_points: persona.painPoints,
+    painPoints: persona.painPoints,
     goals: persona.goals,
     behaviors: persona.behaviors,
-    created_at: persona.createdAt,
-    updated_at: persona.updatedAt
+    createdAt: persona.createdAt,
+    updatedAt: persona.updatedAt
   };
 }
 
@@ -37,7 +37,7 @@ export function convertToPersona(data: any): Persona {
       income: data.demographics.income,
       education: data.demographics.education
     },
-    painPoints: data.pain_points,
+    pain_points: data.pain_points,
     goals: data.goals,
     behaviors: data.behaviors,
     createdAt: data.created_at,

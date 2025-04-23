@@ -60,7 +60,12 @@ const ChatPage = () => {
       setIsLoading(true);
       
       // Initialize the agent using the imported supabase client
-      const agent = new OpenAIProblemUnderstandingAgent(project.id, supabase, user?.id);
+      if (!user?.id) {
+        toast.error("User ID is required for problem understanding");
+        return;
+      }
+      
+      const agent = new OpenAIProblemUnderstandingAgent(project.id, supabase, user.id);
       
       // Load existing context
       await agent.loadContext(project.id);

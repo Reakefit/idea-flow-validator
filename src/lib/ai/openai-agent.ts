@@ -37,22 +37,27 @@ export class OpenAIProblemUnderstandingAgent implements ProblemUnderstandingAgen
   private openai: OpenAI;
   private projectId: string;
   private supabase: typeof supabase;
+  private userId: string;
 
-  constructor(apiKey: string, projectId: string, supabaseClient: typeof supabase) {
+  constructor(projectId: string, supabaseClient: typeof supabase, userId: string) {
     console.log('Initializing OpenAIProblemUnderstandingAgent with projectId:', projectId);
-    if (!apiKey) {
-      throw new Error('OpenAI API key is required');
-    }
     if (!projectId) {
       throw new Error('Project ID is required');
     }
+    if (!userId) {
+      throw new Error('User ID is required');
+    }
+
+    // Initialize OpenAI with an API key from environment variables
     this.openai = new OpenAI({
-      apiKey: apiKey,
+      apiKey: process.env.NEXT_PUBLIC_OPENAI_API_KEY || 'fake-key-for-development',
       dangerouslyAllowBrowser: true
     });
+    
     this.projectId = projectId;
     this.context.projectId = projectId;
     this.supabase = supabaseClient;
+    this.userId = userId;
   }
 
   async understandProblem(description: string): Promise<ProblemUnderstandingResult> {
@@ -148,7 +153,7 @@ ${this.context.keyInsights.map(i => {
       return `- ${i}`;
     }
   }
-  const insight = i as KeyInsight;
+  const insight = i as KeyInsInsight;
   return `- ${insight.insight} (${insight.confidence} confidence, source: ${insight.source})`;
 }).join('\n')}
 Current Metadata:
