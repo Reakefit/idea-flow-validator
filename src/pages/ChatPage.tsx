@@ -88,7 +88,7 @@ const ChatPage = () => {
         return;
       }
       
-      const agent = new OpenAIProblemUnderstandingAgent(project.id, user.id, supabase);
+      const agent = new OpenAIProblemUnderstandingAgent(project.id, user.id);
       
       // Load existing context
       await agent.loadContext(project.id);

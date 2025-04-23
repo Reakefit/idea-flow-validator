@@ -107,8 +107,7 @@ const AnalysisPipelinePage = () => {
         
         const marketResearchAgent = new OpenAIMarketResearchAgent(
           currentProject.id, 
-          user.id,
-          supabase
+          user.id
         );
         
         await marketResearchAgent.loadContext(currentProject.id);
@@ -128,8 +127,7 @@ const AnalysisPipelinePage = () => {
         
         const competitorAnalysisAgent = new OpenAICompetitorAnalysisAgent(
           currentProject.id, 
-          user.id,
-          supabase
+          user.id
         );
         
         await competitorAnalysisAgent.loadContext(currentProject.id);
@@ -161,8 +159,7 @@ const AnalysisPipelinePage = () => {
         
         const featureAnalysisAgent = new OpenAIFeatureAnalysisAgent(
           currentProject.id, 
-          user.id,
-          supabase
+          user.id
         );
         
         await featureAnalysisAgent.loadContext(currentProject.id);
@@ -194,8 +191,7 @@ const AnalysisPipelinePage = () => {
         
         const customerInsightsAgent = new OpenAICustomerInsightsAgent(
           currentProject.id, 
-          user.id,
-          supabase
+          user.id
         );
         
         await customerInsightsAgent.loadContext(currentProject.id);
@@ -233,8 +229,7 @@ const AnalysisPipelinePage = () => {
         
         const personaAgent = new OpenAICustomerPersonaAgent(
           currentProject.id, 
-          user.id,
-          supabase
+          user.id
         );
         
         await personaAgent.loadContext(currentProject.id);
@@ -266,8 +261,7 @@ const AnalysisPipelinePage = () => {
         
         const opportunityAgent = new OpenAIOpportunityMappingAgent(
           currentProject.id, 
-          user.id,
-          supabase
+          user.id
         );
         
         await opportunityAgent.loadContext(currentProject.id);
