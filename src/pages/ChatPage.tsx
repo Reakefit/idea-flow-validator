@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
@@ -30,7 +29,7 @@ const ChatPage = () => {
   const [agent, setAgent] = useState<OpenAIProblemUnderstandingAgent | null>(null);
   const [currentQuestion, setCurrentQuestion] = useState<string | null>(null);
   const [questionCount, setQuestionCount] = useState<number>(0);
-  const MAX_FOLLOW_UP_QUESTIONS = 2; // Increased from 1 to 2
+  const MAX_FOLLOW_UP_QUESTIONS = 2; // Updated max follow-up questions to 2
 
   useEffect(() => {
     if (!user) {
@@ -38,71 +37,59 @@ const ChatPage = () => {
       return;
     }
     
-    // Check if we already have a problem context with a final statement
     if (project && problemContext?.finalStatement) {
-      // Update project phase if needed
       updateProjectPhase('analysis');
       navigate('/analysis');
       return;
     }
     
-    // Initialize agent if we have project and user
     if (project && user && !agent) {
       const newAgent = new OpenAIProblemUnderstandingAgent(
-        project.id,  // project_id
-        supabase,    // Supabase client
-        user.id      // user_id
+        project.id,
+        supabase,
+        user.id
       );
       setAgent(newAgent);
-      
-      // Load existing context
+
       newAgent.loadContext(project.id)
         .then(() => {
           const context = newAgent.getContext();
-          
-          // If we have existing questions and responses, reconstruct the conversation
           if (context.initialStatement && context.clarifyingQuestions.length > 0) {
             const reconstructedMessages: Message[] = [
               { role: 'assistant', content: "Hi there! I'm your idea validation assistant. Tell me about the problem you're trying to solve with your startup idea." },
               { role: 'user', content: context.initialStatement }
             ];
             
-            // Add existing Q&A pairs
             context.userResponses.forEach((response, index) => {
               if (index < context.clarifyingQuestions.length) {
-                reconstructedMessages.push({ 
-                  role: 'assistant', 
-                  content: context.clarifyingQuestions[index] 
+                reconstructedMessages.push({
+                  role: 'assistant',
+                  content: context.clarifyingQuestions[index]
                 });
-                reconstructedMessages.push({ 
-                  role: 'user', 
-                  content: response.response 
+                reconstructedMessages.push({
+                  role: 'user',
+                  content: response.response
                 });
               }
             });
-            
-            // Update question count based on existing responses
+
             setQuestionCount(context.userResponses.length);
-            
-            // If there's a next question that hasn't been answered yet
+
             const nextQuestionIndex = context.userResponses.length;
             if (nextQuestionIndex < context.clarifyingQuestions.length) {
               setCurrentQuestion(context.clarifyingQuestions[nextQuestionIndex]);
-              reconstructedMessages.push({ 
-                role: 'assistant', 
-                content: context.clarifyingQuestions[nextQuestionIndex] 
+              reconstructedMessages.push({
+                role: 'assistant',
+                content: context.clarifyingQuestions[nextQuestionIndex]
               });
             } else if (context.finalStatement) {
-              // If we've reached the final statement
-              reconstructedMessages.push({ 
-                role: 'assistant', 
-                content: "We've gathered enough information to proceed with the analysis." 
+              reconstructedMessages.push({
+                role: 'assistant',
+                content: "We've gathered enough information to proceed with the analysis."
               });
             }
-            
             setMessages(reconstructedMessages);
           } else {
-            // No existing conversation, just show welcome message
             setMessages([{
               role: 'assistant',
               content: "Hi there! I'm your idea validation assistant. Tell me about the problem you're trying to solve with your startup idea."
@@ -115,27 +102,23 @@ const ChatPage = () => {
         });
     }
 
-    // Update project phase
     if (project && project.current_phase !== 'problem_validation') {
       updateProjectPhase('problem_validation');
     }
   }, [user, navigate, project, problemContext, agent]);
 
   useEffect(() => {
-    // Scroll to bottom whenever messages change
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Function to update the project phase
   const updateProjectPhase = async (phase: string) => {
     if (!project) return;
-    
     try {
       const { error } = await supabase
         .from('projects')
         .update({ current_phase: phase })
         .eq('id', project.id);
-        
+
       if (error) {
         console.error("Error updating project phase:", error);
       }
@@ -145,7 +128,7 @@ const ChatPage = () => {
   };
 
   if (!user) {
-    return null; // Will redirect in useEffect
+    return null;
   }
 
   if (!project) {
@@ -171,55 +154,44 @@ const ChatPage = () => {
   const handleSendMessage = async (message: string) => {
     if (!message.trim() || !agent) return;
     
-    // Add user message to chat
     setMessages(prev => [...prev, { role: 'user', content: message }]);
     setInput('');
     setIsLoading(true);
 
     try {
       let result;
-      
-      // If this is the first message (initial problem statement)
+
       if (messages.length === 1) {
-        // First message is always the welcome message, so this is initial problem
         result = await agent.understandProblem(message);
         setCurrentQuestion(result.nextQuestion);
-        
       } else if (currentQuestion) {
-        // This is a response to a clarifying question
         result = await agent.processUserResponse(currentQuestion, message);
         setCurrentQuestion(result.nextQuestion);
-        // Increment question count
         setQuestionCount(prev => prev + 1);
       } else {
-        // Shouldn't happen, but handle gracefully
         toast.error("Unable to determine conversation state");
         setIsLoading(false);
         return;
       }
 
-      // If there's a completion message, show it
       if (result.completionMessage) {
-        setMessages(prev => [...prev, { 
-          role: 'assistant', 
-          content: result.completionMessage 
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: result.completionMessage
         }]);
       }
 
-      // If there's a next question, show it
       if (result.nextQuestion) {
-        setMessages(prev => [...prev, { 
-          role: 'assistant', 
-          content: result.nextQuestion 
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: result.nextQuestion
         }]);
       }
-      
-      // Handle completion - either due to reaching max questions or explicit completion
-      if (result.isComplete || questionCount >= MAX_FOLLOW_UP_QUESTIONS) { // Changed from 1 to MAX_FOLLOW_UP_QUESTIONS
-        // Update project status
+
+      if (result.isComplete || questionCount >= MAX_FOLLOW_UP_QUESTIONS) {
         const { error } = await supabase
           .from('projects')
-          .update({ 
+          .update({
             progress: {
               ...project.progress,
               problem_validation: 'complete'
@@ -227,17 +199,14 @@ const ChatPage = () => {
             current_phase: 'analysis'
           })
           .eq('id', project.id);
-          
+
         if (error) {
           console.error("Error updating project status:", error);
           toast.error("Failed to update project status");
         } else {
           toast.success("Problem understanding complete!");
-          
-          // Refresh context
           fetchProblemContext(project.id);
-          
-          // After a short delay, navigate to analysis page
+
           setTimeout(() => {
             navigate('/analysis');
           }, 2000);
@@ -245,9 +214,9 @@ const ChatPage = () => {
       }
     } catch (error) {
       console.error("Error processing message:", error);
-      setMessages(prev => [...prev, { 
-        role: 'assistant', 
-        content: "I'm sorry, there was an error processing your request." 
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: "I'm sorry, there was an error processing your request."
       }]);
       toast.error("Error processing your message");
     } finally {

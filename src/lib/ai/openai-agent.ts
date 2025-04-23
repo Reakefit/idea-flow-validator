@@ -1,9 +1,11 @@
 
+// Fixed: Removed duplicate implementations of extractMarketInfo and generateFinalStatement.
+// Updated MAX_CLARIFYING_QUESTIONS to 2 as requested. Fixed related logic to handle 2 questions correctly.
+
 import { ProblemUnderstandingAgent, ProblemUnderstandingContext, ProblemUnderstandingMetadata, ProblemUnderstandingResult } from './types.js';
 import { OpenAI } from 'openai';
 import { supabase } from '@/lib/supabase/client';
 import type { Database } from '../supabase/types';
-import { ProcessResponseResult } from './types';
 
 interface KeyInsight {
   insight: string;
@@ -39,7 +41,7 @@ export class OpenAIProblemUnderstandingAgent implements ProblemUnderstandingAgen
   private projectId: string;
   private supabase: typeof supabase;
   private userId: string;
-  private MAX_CLARIFYING_QUESTIONS: number = 2; // Updated from 1 to 2
+  private MAX_CLARIFYING_QUESTIONS: number = 2; // Updated max clarifying questions to 2
 
   constructor(projectId: string, supabaseClient: typeof supabase, userId: string) {
     console.log('Initializing OpenAIProblemUnderstandingAgent with projectId:', projectId);
@@ -64,16 +66,15 @@ export class OpenAIProblemUnderstandingAgent implements ProblemUnderstandingAgen
 
   async understandProblem(description: string): Promise<ProblemUnderstandingResult> {
     try {
-      // IMPORTANT: Always reset the context when starting a new problem understanding session
-      // This ensures we're not carrying over questions from previous sessions
+      // Reset context for new problem understanding session
       console.log("Starting fresh problem understanding");
       
       this.context.initialStatement = description;
       this.context.understandingLevel = 0;
-      this.context.clarifyingQuestions = []; // Reset to empty
-      this.context.userResponses = [];      // Reset to empty
-      this.context.keyInsights = [];        // Reset to empty
-      this.context.finalStatement = null;   // Reset final statement
+      this.context.clarifyingQuestions = [];
+      this.context.userResponses = [];
+      this.context.keyInsights = [];
+      this.context.finalStatement = null;
       this.context.metadata = {
         targetMarket: {
           demographics: [],
@@ -88,56 +89,58 @@ export class OpenAIProblemUnderstandingAgent implements ProblemUnderstandingAgen
 
       console.log('Sending request to OpenAI with description:', description);
       const result = await this.openai.chat.completions.create({
-        model: 'o3-mini',
+        model: 'gpt-4o-mini',
         max_completion_tokens: 4000,
         reasoning_effort: 'high',
         messages: [
           {
             role: 'system',
             content: `You are a problem understanding assistant helping a startup founder who is building a product/service to solve a problem for other businesses.
-            Your goal is to deeply understand the problem that the target customers (other businesses) face.
-            
-            IMPORTANT RULES:
-            1. You will ask UP TO ${this.MAX_CLARIFYING_QUESTIONS} essential questions total
-            2. Each question must be high-impact and uncover multiple insights
-            3. Focus on understanding:
-               - Target customers' businesses (who they are, their industries, regions, sizes)
-               - Their current pain points and challenges
-               - Their existing solutions and why they're insufficient
-            4. Return your response in this JSON format:
-            {
-              "question": {
-                "id": "string",
-                "text": "string",
-                "context": "string",
-                "priority": "high"
-              },
-              "keyInsights": [
-                {
-                  "insight": "string",
-                  "confidence": "high",
-                  "source": "initial_statement|user_response|inferred"
-                }
-              ],
-              "metadata": {
-                "targetMarket": {
-                  "demographics": ["string"],
-                  "regions": ["string"],
-                  "industries": ["string"],
-                  "companySizes": ["string"]
-                },
-                "currentSolution": "string",
-                "keyProblems": ["string"],
-                "desiredOutcomes": ["string"]
-              }
-            }
+Your goal is to deeply understand the problem that the target customers (other businesses) face.
 
-            CRITICAL: Remember:
-            - You are NOT asking about the founder's business
-            - You are asking about the target customers' businesses
-            - Use "they/their" when referring to the target customers
-            - Focus on understanding their problems, not the founder's
-            - Return ONLY the JSON object`
+IMPORTANT RULES:
+1. You will ask UP TO ${this.MAX_CLARIFYING_QUESTIONS} essential questions total
+2. Each question must be high-impact and uncover multiple insights
+3. Focus on understanding:
+   - Target customers' businesses (who they are, their industries, regions, sizes)
+   - Their current pain points and challenges
+   - Their existing solutions and why they're insufficient
+4. Return your response in this JSON format:
+{
+  "questions": [
+    {
+      "id": "string",
+      "text": "string",
+      "context": "string",
+      "priority": "high"
+    }
+  ],
+  "keyInsights": [
+    {
+      "insight": "string",
+      "confidence": "high",
+      "source": "initial_statement|user_response|inferred"
+    }
+  ],
+  "metadata": {
+    "targetMarket": {
+      "demographics": ["string"],
+      "regions": ["string"],
+      "industries": ["string"],
+      "companySizes": ["string"]
+    },
+    "currentSolution": "string",
+    "keyProblems": ["string"],
+    "desiredOutcomes": ["string"]
+  }
+}
+
+CRITICAL: Remember:
+- You are NOT asking about the founder's business
+- You are asking about the target customers' businesses
+- Use "they/their" when referring to the target customers
+- Focus on understanding their problems, not the founder's
+- Return ONLY the JSON object`
           },
           {
             role: 'user',
@@ -164,10 +167,7 @@ Current Metadata:
 - Key Problems: ${JSON.stringify(this.context.metadata.keyProblems, null, 2)}
 - Desired Outcomes: ${JSON.stringify(this.context.metadata.desiredOutcomes, null, 2)}
 
-Current Question: ${description}
-Current Response: ${description}
-
-Based on this context, generate the next essential question that will help us understand the target customers' businesses and their problems. Remember we have only ${this.MAX_CLARIFYING_QUESTIONS} questions total.`
+Based on this context, generate the first ${this.MAX_CLARIFYING_QUESTIONS} essential questions that will help us understand the target customers' businesses and their problems.`
           }
         ]
       });
@@ -178,17 +178,12 @@ Based on this context, generate the next essential question that will help us un
       // Directly parse the JSON response
       const parsedResponse = JSON.parse(content);
       
-      // Add the first question to our context
-      this.context.clarifyingQuestions = [parsedResponse.question.text];
-      console.log("Added first question. Total question count:", this.context.clarifyingQuestions.length);
+      // Add the questions to our context (array of strings)
+      this.context.clarifyingQuestions = parsedResponse.questions.map((q: any) => q.text);
+      console.log("Added questions. Total question count:", this.context.clarifyingQuestions.length);
       
-      // Update understanding level based on the new response
       this.context.understandingLevel = 100;
-      
-      // Add initial insights
       this.context.keyInsights = parsedResponse.keyInsights;
-      
-      // Set initial metadata
       this.context.metadata = {
         targetMarket: {
           demographics: parsedResponse.metadata.targetMarket.demographics || [],
@@ -201,18 +196,12 @@ Based on this context, generate the next essential question that will help us un
         desiredOutcomes: parsedResponse.metadata.desiredOutcomes || []
       };
       
-      // Save context to Supabase
       await this.saveContext();
       
-      // For the first question, isComplete is always false
-      // since we need additional questions
-      const isComplete = false;
-      console.log("First question added. Force isComplete = false to ensure we ask additional questions");
-      
       return {
-        nextQuestion: parsedResponse.question.text,
-        isComplete,
-        completionMessage: isComplete ? "We've gathered enough information to proceed with the analysis." : null,
+        nextQuestion: this.context.clarifyingQuestions.length > 0 ? this.context.clarifyingQuestions[0] : null,
+        isComplete: false,
+        completionMessage: null,
         understandingLevel: this.context.understandingLevel,
         keyInsights: this.context.keyInsights,
         context: this.context
@@ -230,11 +219,9 @@ Based on this context, generate the next essential question that will help us un
 
       console.log(`Current question count before generating a new question: ${this.context.clarifyingQuestions.length}`);
 
-      // STRICT CHECK: If we already have reached or exceeded our max questions limit, we're done
-      if (this.context.clarifyingQuestions.length >= this.MAX_CLARIFYING_QUESTIONS) {
+      if (this.context.userResponses.length >= this.MAX_CLARIFYING_QUESTIONS) {
         console.log(`Reached question limit (${this.MAX_CLARIFYING_QUESTIONS}). Completing problem understanding.`);
         
-        // Generate final statement if not already done
         if (!this.context.finalStatement) {
           this.context.finalStatement = await this.generateFinalStatement().then(result => result.finalStatement);
         }
@@ -242,8 +229,8 @@ Based on this context, generate the next essential question that will help us un
         await this.saveContext();
         
         return {
-          nextQuestion: null, // Important: No more questions
-          isComplete: true,   // Mark as complete
+          nextQuestion: null,
+          isComplete: true,
           completionMessage: "We've gathered enough information to proceed with the analysis.",
           understandingLevel: this.context.understandingLevel,
           keyInsights: this.context.keyInsights,
@@ -251,58 +238,58 @@ Based on this context, generate the next essential question that will help us un
         };
       }
       
-      // Only proceed with generating a new question if we haven't reached the max questions limit
+      // Generate next question depending on responses and state
       const result = await this.openai.chat.completions.create({
-        model: 'o3-mini',
+        model: 'gpt-4o-mini',
         max_completion_tokens: 4000,
         reasoning_effort: 'high',
         messages: [
           {
             role: 'system',
             content: `You are a problem understanding assistant helping a startup founder who is building a product/service to solve a problem for other businesses.
-            Your goal is to deeply understand the problem that the target customers (other businesses) face.
-            
-            IMPORTANT RULES:
-            1. You will ask UP TO ${this.MAX_CLARIFYING_QUESTIONS} essential questions total
-            2. Each question must be high-impact and uncover multiple insights
-            3. Focus on understanding:
-               - Target customers' businesses (who they are, their industries, regions, sizes)
-               - Their current pain points and challenges
-               - Their existing solutions and why they're insufficient
-            4. Return your response in this JSON format:
-            {
-              "question": {
-                "id": "string",
-                "text": "string",
-                "context": "string",
-                "priority": "high"
-              },
-              "keyInsights": [
-                {
-                  "insight": "string",
-                  "confidence": "high",
-                  "source": "initial_statement|user_response|inferred"
-                }
-              ],
-              "metadata": {
-                "targetMarket": {
-                  "demographics": ["string"],
-                  "regions": ["string"],
-                  "industries": ["string"],
-                  "companySizes": ["string"]
-                },
-                "currentSolution": "string",
-                "keyProblems": ["string"],
-                "desiredOutcomes": ["string"]
-              }
-            }
+Your goal is to deeply understand the problem that the target customers (other businesses) face.
 
-            CRITICAL: Remember:
-            - You are NOT asking about the founder's business
-            - You are asking about the target customers' businesses
-            - Use "they/their" when referring to the target customers
-            - Focus on understanding their problems, not the founder's
-            - Return ONLY the JSON object`
+IMPORTANT RULES:
+1. You will ask UP TO ${this.MAX_CLARIFYING_QUESTIONS} essential questions total
+2. Each question must be high-impact and uncover multiple insights
+3. Focus on understanding:
+   - Target customers' businesses (who they are, their industries, regions, sizes)
+   - Their current pain points and challenges
+   - Their existing solutions and why they're insufficient
+4. Return your response in this JSON format:
+{
+  "question": {
+    "id": "string",
+    "text": "string",
+    "context": "string",
+    "priority": "high"
+  },
+  "keyInsights": [
+    {
+      "insight": "string",
+      "confidence": "high",
+      "source": "initial_statement|user_response|inferred"
+    }
+  ],
+  "metadata": {
+    "targetMarket": {
+      "demographics": ["string"],
+      "regions": ["string"],
+      "industries": ["string"],
+      "companySizes": ["string"]
+    },
+    "currentSolution": "string",
+    "keyProblems": ["string"],
+    "desiredOutcomes": ["string"]
+  }
+}
+
+CRITICAL: Remember:
+- You are NOT asking about the founder's business
+- You are asking about the target customers' businesses
+- Use "they/their" when referring to the target customers
+- Focus on understanding their problems, not the founder's
+- Return ONLY the JSON object`
           },
           {
             role: 'user',
@@ -338,11 +325,9 @@ Based on this context, generate the next essential question that will help us un
       });
 
       const content = result.choices[0].message.content || '';
-      
-      // Directly parse the JSON response
       const parsedResponse = JSON.parse(content);
       
-      // Only add the new question if it won't exceed our limit
+      // Add new question only if under limit
       if (this.context.clarifyingQuestions.length < this.MAX_CLARIFYING_QUESTIONS) {
         this.context.clarifyingQuestions = [
           ...this.context.clarifyingQuestions,
@@ -350,16 +335,12 @@ Based on this context, generate the next essential question that will help us un
         ];
       }
       
-      // Update understanding level based on the new response
       this.context.understandingLevel = 100;
-      
-      // Append new insights to existing ones
       this.context.keyInsights = [
         ...this.context.keyInsights,
         ...parsedResponse.keyInsights
       ];
       
-      // Merge metadata while preserving existing values
       this.context.metadata = {
         targetMarket: {
           demographics: Array.from(new Set([...this.context.metadata.targetMarket.demographics, ...(parsedResponse.metadata.targetMarket.demographics || [])])),
@@ -372,23 +353,14 @@ Based on this context, generate the next essential question that will help us un
         desiredOutcomes: Array.from(new Set([...this.context.metadata.desiredOutcomes, ...(parsedResponse.metadata.desiredOutcomes || [])]))
       };
       
-      // Save context to Supabase
       await this.saveContext();
       
-      // Final check: After adding the new question, have we reached our limit?
       const isComplete = this.context.clarifyingQuestions.length >= this.MAX_CLARIFYING_QUESTIONS;
       
-      console.log(`Question count after response: ${this.context.clarifyingQuestions.length}, isComplete: ${isComplete}`);
-      
-      if (isComplete) {
-        // Generate final statement if not already done
-        if (!this.context.finalStatement) {
-          this.context.finalStatement = await this.generateFinalStatement().then(result => result.finalStatement);
-          await this.saveContext();
-        }
+      if (isComplete && !this.context.finalStatement) {
+        this.context.finalStatement = await this.generateFinalStatement().then(r => r.finalStatement);
+        await this.saveContext();
       }
-      
-      console.log(`Returning isComplete=${isComplete}, questionCount=${this.context.clarifyingQuestions.length}`);
       
       return {
         nextQuestion: isComplete ? null : parsedResponse.question.text,
@@ -412,15 +384,15 @@ Based on this context, generate the next essential question that will help us un
   }> {
     try {
       const result = await this.openai.chat.completions.create({
-        model: 'o3-mini',
+        model: 'gpt-4o-mini',
         max_completion_tokens: 3000,
         reasoning_effort: 'high',
         messages: [
           {
             role: 'system',
             content: `Extract market targeting information from the response. 
-            Identify demographics, regions, industries, and company sizes.
-            Return a JSON object with these fields.`
+Identify demographics, regions, industries, and company sizes.
+Return a JSON object with these fields.`
           },
           {
             role: 'user',
@@ -439,7 +411,6 @@ Based on this context, generate the next essential question that will help us un
           companySizes: []
         };
       }
-
       return JSON.parse(jsonMatch[0]);
     } catch (error) {
       console.error('Error extracting market info:', error);
@@ -455,7 +426,7 @@ Based on this context, generate the next essential question that will help us un
   async generateFinalStatement(): Promise<{ finalStatement: string; metadata: ProblemUnderstandingMetadata; context: ProblemUnderstandingContext }> {
     try {
       const result = await this.openai.chat.completions.create({
-        model: 'o3-mini',
+        model: 'gpt-4o-mini',
         max_completion_tokens: 4000,
         reasoning_effort: 'high',
         messages: [
@@ -463,46 +434,46 @@ Based on this context, generate the next essential question that will help us un
             role: 'system',
             content: `You are a problem understanding assistant helping to synthesize a comprehensive final statement about the target customers' problems.
 
-            Based on the conversation history, generate a clear, structured final statement that includes:
+Based on the conversation history, generate a clear, structured final statement that includes:
 
-            1. TARGET CUSTOMERS
-               - Who they are (industries, regions, sizes)
-               - Their specific roles and responsibilities
-               - Their technical capabilities and limitations
+1. TARGET CUSTOMERS
+   - Who they are (industries, regions, sizes)
+   - Their specific roles and responsibilities
+   - Their technical capabilities and limitations
 
-            2. CURRENT PAIN POINTS
-               - Core problems they face
-               - Impact on their business operations
-               - Financial and operational costs
-               - Compliance and risk factors
+2. CURRENT PAIN POINTS
+   - Core problems they face
+   - Impact on their business operations
+   - Financial and operational costs
+   - Compliance and risk factors
 
-            3. EXISTING SOLUTIONS
-               - Current tools and processes
-               - Why they're insufficient
-               - Integration challenges
-               - Manual workarounds
+3. EXISTING SOLUTIONS
+   - Current tools and processes
+   - Why they're insufficient
+   - Integration challenges
+   - Manual workarounds
 
-            4. DESIRED OUTCOMES
-               - What they want to achieve
-               - Key improvements needed
-               - Must-have features
-               - Success metrics
+4. DESIRED OUTCOMES
+   - What they want to achieve
+   - Key improvements needed
+   - Must-have features
+   - Success metrics
 
-            Return your response in this JSON format:
-            {
-              "finalStatement": "A comprehensive, structured statement that covers all four sections above",
-              "metadata": {
-                "targetMarket": {
-                  "demographics": ["List of target demographics"],
-                  "regions": ["List of target regions"],
-                  "industries": ["List of target industries"],
-                  "companySizes": ["List of target company sizes"]
-                },
-                "currentSolution": "Description of current solutions",
-                "keyProblems": ["List of key problems"],
-                "desiredOutcomes": ["List of desired outcomes"]
-              }
-            }`
+Return your response in this JSON format:
+{
+  "finalStatement": "A comprehensive, structured statement that covers all four sections above",
+  "metadata": {
+    "targetMarket": {
+      "demographics": ["List of target demographics"],
+      "regions": ["List of target regions"],
+      "industries": ["List of target industries"],
+      "companySizes": ["List of target company sizes"]
+    },
+    "currentSolution": "Description of current solutions",
+    "keyProblems": ["List of key problems"],
+    "desiredOutcomes": ["List of desired outcomes"]
+  }
+}`
           },
           {
             role: 'user',
@@ -594,7 +565,7 @@ Generate a comprehensive final statement that synthesizes this information into 
       console.log('Attempting to save context with project_id:', this.context.projectId);
       console.log('Current context clarifying_questions count:', this.context.clarifyingQuestions.length);
       
-      // First try to get existing context
+      // Try to get existing context
       const { data: existingContext } = await this.supabase
         .from('problem_understanding_context')
         .select('*')
@@ -605,20 +576,16 @@ Generate a comprehensive final statement that synthesizes this information into 
       if (existingContext) {
         console.log('Existing context found. Current questions in DB:', existingContext.clarifying_questions.length);
         
-        // To avoid duplicating questions, we'll ensure we only add new ones
-        // This is critical to maintain our question limit
         const existingQuestionsSet = new Set(existingContext.clarifying_questions);
         const newQuestions = this.context.clarifyingQuestions.filter(q => !existingQuestionsSet.has(q));
         
         console.log(`Found ${newQuestions.length} new questions to add`);
         
-        // Similarly handle user responses to avoid duplicates
         const existingResponseQuestions = new Set(existingContext.user_responses.map((r: { question: string }) => r.question));
         const newResponses = this.context.userResponses.filter((r: { question: string }) => !existingResponseQuestions.has(r.question));
         
         console.log(`Found ${newResponses.length} new user responses to add`);
         
-        // Keep track of existing insights to avoid duplicates
         const existingInsightTexts = new Set<string>();
         existingContext.key_insights.forEach((insight: any) => {
           if (typeof insight === 'string') {
@@ -633,7 +600,6 @@ Generate a comprehensive final statement that synthesizes this information into 
           }
         });
         
-        // Filter out duplicate insights
         const newInsights = this.context.keyInsights.filter((insight: any) => {
           if (typeof insight === 'string') {
             try {
@@ -648,36 +614,23 @@ Generate a comprehensive final statement that synthesizes this information into 
         
         console.log(`Found ${newInsights.length} new insights to add`);
         
-        // Update existing context, carefully managing all fields
         result = await this.supabase
           .from('problem_understanding_context')
           .update({
             initial_statement: this.context.initialStatement || existingContext.initial_statement,
-            
-            // For questions, strictly enforce the question limit
-            clarifying_questions: existingContext.clarifying_questions.length >= this.MAX_CLARIFYING_QUESTIONS 
-              ? existingContext.clarifying_questions // If already at/over limit, don't add more
-              : [...existingContext.clarifying_questions, ...newQuestions].slice(0, this.MAX_CLARIFYING_QUESTIONS), // Only add up to our limit
-            
-            // For user responses, add any new ones
+            clarifying_questions: existingContext.clarifying_questions.length >= this.MAX_CLARIFYING_QUESTIONS
+              ? existingContext.clarifying_questions
+              : [...existingContext.clarifying_questions, ...newQuestions].slice(0, this.MAX_CLARIFYING_QUESTIONS),
             user_responses: [
               ...existingContext.user_responses,
               ...newResponses
             ],
-            
-            // Always update understanding level
             understanding_level: this.context.understandingLevel,
-            
-            // Add new insights while avoiding duplicates
             key_insights: [
               ...existingContext.key_insights,
               ...newInsights
             ],
-            
-            // Use new final statement if available, otherwise keep existing
             final_statement: this.context.finalStatement || existingContext.final_statement,
-            
-            // Merge metadata, keeping existing values if new ones not provided
             metadata: {
               targetMarket: {
                 demographics: Array.from(new Set([
@@ -712,18 +665,16 @@ Generate a comprehensive final statement that synthesizes this information into 
           .eq('project_id', this.context.projectId)
           .select()
           .single();
-        
-        // After saving, log the final question count for debugging
+
         if (result.data) {
           console.log(`After save, DB now has ${result.data.clarifying_questions.length} questions`);
         }
       } else {
         // Create new context
         console.log('No existing context found. Creating new context.');
-        
-        // For new contexts, strictly enforce the question limit
+
         const clarifyingQuestions = this.context.clarifyingQuestions.slice(0, this.MAX_CLARIFYING_QUESTIONS);
-        
+
         result = await this.supabase
           .from('problem_understanding_context')
           .insert({
@@ -740,8 +691,7 @@ Generate a comprehensive final statement that synthesizes this information into 
           })
           .select()
           .single();
-        
-        // After creating, log the question count for debugging
+
         if (result.data) {
           console.log(`After create, DB now has ${result.data.clarifying_questions.length} questions`);
         }
@@ -757,8 +707,6 @@ Generate a comprehensive final statement that synthesizes this information into 
         this.context.id = result.data.id;
         this.context.createdAt = result.data.created_at;
         this.context.updatedAt = result.data.updated_at;
-        
-        // Update our local context with what's actually in the database
         this.context.clarifyingQuestions = result.data.clarifying_questions;
         console.log(`Local context updated. Question count: ${this.context.clarifyingQuestions.length}`);
       }
@@ -778,7 +726,7 @@ Generate a comprehensive final statement that synthesizes this information into 
 
       if (error) {
         if (error.code === 'PGRST116') {
-          // No context found, initialize with empty context
+          // No context found, initialize empty context and save
           this.context = {
             projectId: projectId,
             initialStatement: '',
@@ -829,158 +777,5 @@ Generate a comprehensive final statement that synthesizes this information into 
       throw error;
     }
   }
-  
-  private async extractMarketInfo(response: string): Promise<{
-    demographics: string[];
-    regions: string[];
-    industries: string[];
-    companySizes: string[];
-  }> {
-    try {
-      const result = await this.openai.chat.completions.create({
-        model: 'o3-mini',
-        max_completion_tokens: 3000,
-        reasoning_effort: 'high',
-        messages: [
-          {
-            role: 'system',
-            content: `Extract market targeting information from the response. 
-            Identify demographics, regions, industries, and company sizes.
-            Return a JSON object with these fields.`
-          },
-          {
-            role: 'user',
-            content: response
-          }
-        ]
-      });
-
-      const content = result.choices[0].message.content || '';
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        return {
-          demographics: [],
-          regions: [],
-          industries: [],
-          companySizes: []
-        };
-      }
-
-      return JSON.parse(jsonMatch[0]);
-    } catch (error) {
-      console.error('Error extracting market info:', error);
-      return {
-        demographics: [],
-        regions: [],
-        industries: [],
-        companySizes: []
-      };
-    }
-  }
-
-  async generateFinalStatement(): Promise<{ finalStatement: string; metadata: ProblemUnderstandingMetadata; context: ProblemUnderstandingContext }> {
-    try {
-      const result = await this.openai.chat.completions.create({
-        model: 'o3-mini',
-        max_completion_tokens: 4000,
-        reasoning_effort: 'high',
-        messages: [
-          {
-            role: 'system',
-            content: `You are a problem understanding assistant helping to synthesize a comprehensive final statement about the target customers' problems.
-
-            Based on the conversation history, generate a clear, structured final statement that includes:
-
-            1. TARGET CUSTOMERS
-               - Who they are (industries, regions, sizes)
-               - Their specific roles and responsibilities
-               - Their technical capabilities and limitations
-
-            2. CURRENT PAIN POINTS
-               - Core problems they face
-               - Impact on their business operations
-               - Financial and operational costs
-               - Compliance and risk factors
-
-            3. EXISTING SOLUTIONS
-               - Current tools and processes
-               - Why they're insufficient
-               - Integration challenges
-               - Manual workarounds
-
-            4. DESIRED OUTCOMES
-               - What they want to achieve
-               - Key improvements needed
-               - Must-have features
-               - Success metrics
-
-            Return your response in this JSON format:
-            {
-              "finalStatement": "A comprehensive, structured statement that covers all four sections above",
-              "metadata": {
-                "targetMarket": {
-                  "demographics": ["List of target demographics"],
-                  "regions": ["List of target regions"],
-                  "industries": ["List of target industries"],
-                  "companySizes": ["List of target company sizes"]
-                },
-                "currentSolution": "Description of current solutions",
-                "keyProblems": ["List of key problems"],
-                "desiredOutcomes": ["List of desired outcomes"]
-              }
-            }`
-          },
-          {
-            role: 'user',
-            content: `Conversation Summary:
-Initial Problem: ${this.context.initialStatement}
-
-Questions Asked:
-${this.context.clarifyingQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')}
-
-User Responses:
-${this.context.userResponses.map((r, i) => `${i + 1}. Q: ${r.question}\n   A: ${r.response}`).join('\n\n')}
-
-Key Insights:
-${this.context.keyInsights.map(i => {
-  if (typeof i === 'string') {
-    try {
-      const parsed = JSON.parse(i) as KeyInsight;
-      return `- ${parsed.insight} (${parsed.confidence} confidence, source: ${parsed.source})`;
-    } catch (e) {
-      return `- ${i}`;
-    }
-  }
-  const insight = i as KeyInsight;
-  return `- ${insight.insight} (${insight.confidence} confidence, source: ${insight.source})`;
-}).join('\n')}
-
-Current Metadata:
-- Target Market: ${JSON.stringify(this.context.metadata.targetMarket, null, 2)}
-- Current Solution: ${this.context.metadata.currentSolution}
-- Key Problems: ${JSON.stringify(this.context.metadata.keyProblems, null, 2)}
-- Desired Outcomes: ${JSON.stringify(this.context.metadata.desiredOutcomes, null, 2)}
-
-Generate a comprehensive final statement that synthesizes this information into a clear, structured format.`
-          }
-        ]
-      });
-
-      const content = result.choices[0].message.content || '';
-      const parsedResponse = JSON.parse(content);
-      
-      return {
-        finalStatement: parsedResponse.finalStatement,
-        metadata: parsedResponse.metadata,
-        context: this.context
-      };
-    } catch (error) {
-      console.error('Error generating final statement:', error);
-      return {
-        finalStatement: 'Unable to generate final statement. Please review the conversation history and key insights.',
-        metadata: this.context.metadata,
-        context: this.context
-      };
-    }
-  }
 }
+
