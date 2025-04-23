@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,9 +11,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from 'sonner';
-
-// Import the supabase client directly
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '@/lib/supabase/client';
 import { OpenAIProblemUnderstandingAgent } from '@/lib/ai/openai-agent';
 
 interface Message {
@@ -25,15 +23,41 @@ const ChatPage = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { currentProject: project } = useProject();
+  const { currentProject: project, fetchProblemContext, problemContext } = useProject();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!user) {
       navigate('/login');
+      return;
     }
-  }, [user, navigate]);
+    
+    // Check if we already have a problem context with a final statement
+    if (project && problemContext?.finalStatement) {
+      navigate('/analysis');
+      return;
+    }
+    
+    // Initialize with welcome message
+    if (messages.length === 0) {
+      setMessages([{
+        role: 'assistant',
+        content: "Hi there! I'm your idea validation assistant. Tell me about the problem you're trying to solve with your startup idea."
+      }]);
+    }
+    
+  }, [user, navigate, project, problemContext, messages.length]);
+
+  useEffect(() => {
+    // Scroll to bottom whenever messages change
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  if (!user) {
+    return null; // Will redirect in useEffect
+  }
 
   if (!project) {
     return (
@@ -59,13 +83,12 @@ const ChatPage = () => {
     try {
       setIsLoading(true);
       
-      // Initialize the agent using the imported supabase client
       if (!user?.id) {
         toast.error("User ID is required for problem understanding");
         return;
       }
       
-      const agent = new OpenAIProblemUnderstandingAgent(project.id, supabase, user.id);
+      const agent = new OpenAIProblemUnderstandingAgent(project.id, user.id, supabase);
       
       // Load existing context
       await agent.loadContext(project.id);
@@ -77,14 +100,56 @@ const ChatPage = () => {
       await agent.saveContext();
 
       // Display the agent's response
-      setMessages(prev => [...prev, { role: 'assistant', content: result.completionMessage || 'Analysis complete.' }]);
+      if (result.completionMessage) {
+        setMessages(prev => [...prev, { 
+          role: 'assistant', 
+          content: result.completionMessage 
+        }]);
+      }
 
       if (result.nextQuestion) {
-        setMessages(prev => [...prev, { role: 'assistant', content: result.nextQuestion }]);
+        setMessages(prev => [...prev, { 
+          role: 'assistant', 
+          content: result.nextQuestion 
+        }]);
       }
+      
+      // If problem understanding is complete, update project status and redirect
+      if (result.isComplete) {
+        // Update project status in database
+        const { error } = await supabase
+          .from('projects')
+          .update({ 
+            progress: {
+              ...project.progress,
+              problem_validation: 'complete'
+            }
+          })
+          .eq('id', project.id);
+          
+        if (error) {
+          console.error("Error updating project status:", error);
+          toast.error("Failed to update project status");
+        } else {
+          toast.success("Problem understanding complete!");
+          
+          // After a short delay, navigate to analysis page
+          setTimeout(() => {
+            navigate('/analysis');
+          }, 2000);
+        }
+      }
+      
+      // Refresh the context in the project provider
+      fetchProblemContext(project.id);
+      
     } catch (error) {
       console.error("Error processing message:", error);
-      setMessages(prev => [...prev, { role: 'assistant', content: "I'm sorry, there was an error processing your request." }]);
+      setMessages(prev => [...prev, { 
+        role: 'assistant', 
+        content: "I'm sorry, there was an error processing your request." 
+      }]);
+      toast.error("Error processing your message");
     } finally {
       setIsLoading(false);
     }
@@ -120,9 +185,14 @@ const ChatPage = () => {
               ))}
               {isLoading && (
                 <div className="flex items-center justify-center">
-                  <p>Loading...</p>
+                  <div className="flex space-x-2">
+                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '0.2s' }}></div>
+                    <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '0.4s' }}></div>
+                  </div>
                 </div>
               )}
+              <div ref={messagesEndRef} />
             </div>
           </ScrollArea>
         </CardContent>
@@ -134,10 +204,11 @@ const ChatPage = () => {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') {
+                if (e.key === 'Enter' && !isLoading) {
                   handleSendMessage(input);
                 }
               }}
+              disabled={isLoading}
             />
             <Button onClick={() => handleSendMessage(input)} disabled={isLoading}>
               Send

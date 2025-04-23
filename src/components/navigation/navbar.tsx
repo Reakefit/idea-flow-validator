@@ -2,8 +2,9 @@
 import { cn } from "@/lib/utils";
 import { GradientButton } from "../ui/gradient-button";
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/lib/context/AuthContext";
+import { useProject } from "@/lib/context/ProjectContext";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,7 +21,9 @@ interface NavbarProps {
 
 const Navbar = ({ className }: NavbarProps) => {
   const [scrolled, setScrolled] = useState(false);
-  const { user, signOut } = useAuth();
+  const { user, signOut, isLoading } = useAuth();
+  const { currentProject } = useProject();
+  const navigate = useNavigate();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -34,13 +37,25 @@ const Navbar = ({ className }: NavbarProps) => {
   }, []);
 
   const getInitials = (name?: string) => {
-    if (!name) return 'U';
+    if (!name) return user?.email?.[0].toUpperCase() || 'U';
+    
     return name
       .split(' ')
       .map(part => part[0])
       .join('')
       .toUpperCase()
       .substring(0, 2);
+  };
+
+  const handleLogout = async () => {
+    await signOut();
+    navigate('/login');
+  };
+
+  const handleCreateNewProject = () => {
+    // This would typically open a modal or navigate to a project creation page
+    // For now, we'll just navigate to the dashboard
+    navigate('/dashboard');
   };
 
   return (
@@ -81,6 +96,24 @@ const Navbar = ({ className }: NavbarProps) => {
               >
                 Problem Chat
               </Link>
+              {currentProject && currentProject.progress.problem_validation === 'complete' && (
+                <>
+                  <Link
+                    to="/analysis"
+                    className="text-sm font-medium text-foreground/80 hover:text-foreground transition-colors"
+                  >
+                    Analysis
+                  </Link>
+                  {currentProject.progress.opportunity_mapping === 'complete' && (
+                    <Link
+                      to="/insights"
+                      className="text-sm font-medium text-foreground/80 hover:text-foreground transition-colors"
+                    >
+                      Insights
+                    </Link>
+                  )}
+                </>
+              )}
             </>
           )}
           <Link
@@ -98,7 +131,9 @@ const Navbar = ({ className }: NavbarProps) => {
         </nav>
 
         <div className="flex items-center space-x-4">
-          {user ? (
+          {isLoading ? (
+            <div className="h-8 w-8 rounded-full border-2 border-t-transparent border-primary animate-spin"></div>
+          ) : user ? (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-10 w-10 rounded-full">
@@ -122,11 +157,14 @@ const Navbar = ({ className }: NavbarProps) => {
                 <DropdownMenuItem asChild>
                   <Link to="/dashboard">Dashboard</Link>
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleCreateNewProject}>
+                  New Project
+                </DropdownMenuItem>
                 <DropdownMenuItem asChild>
                   <Link to="/settings">Settings</Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => signOut()} className="text-destructive">
+                <DropdownMenuItem onClick={handleLogout} className="text-destructive">
                   Sign out
                 </DropdownMenuItem>
               </DropdownMenuContent>

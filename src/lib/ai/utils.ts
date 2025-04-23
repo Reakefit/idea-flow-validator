@@ -38,7 +38,7 @@ export function convertToPersona(data: any): Persona {
       income: data.demographics.income,
       education: data.demographics.education
     },
-    pain_points: data.pain_points,
+    painPoints: data.pain_points || [],
     goals: data.goals,
     behaviors: data.behaviors,
     createdAt: data.created_at,
@@ -60,7 +60,7 @@ export function convertFromPersona(persona: Persona): any {
       income: persona.demographics.income,
       education: persona.demographics.education
     },
-    painPoints: persona.painPoints, // Fixed: Changed pain_points to painPoints
+    painPoints: persona.painPoints,
     goals: persona.goals,
     behaviors: persona.behaviors,
     created_at: persona.createdAt,
