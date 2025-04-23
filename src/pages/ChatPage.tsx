@@ -82,27 +82,19 @@ const ChatPage = () => {
     try {
       setIsLoading(true);
       
-      if (!user?.id) {
-        toast.error("User ID is required for problem understanding");
+      if (!user?.id || !project) {
+        toast.error("User ID and project are required for problem understanding");
         return;
       }
 
-      // FIX: OpenAIProblemUnderstandingAgent expects (projectId: string, supabaseClient: typeof supabase)
-      // Or if it expects (projectId: string), check and match its constructor accordingly.
-      // According to previous code, it takes: (projectId: string, supabaseClient: typeof supabase)
-      // We'll pass the supabase client.
-      const agent = new OpenAIProblemUnderstandingAgent(project.id, supabase);
+      const agent = new OpenAIProblemUnderstandingAgent(project.id, user.id, supabase);
       
-      // Load existing context
       await agent.loadContext(project.id);
 
-      // Process the user's message
       const result = await agent.understandProblem(message);
 
-      // Save the updated context
       await agent.saveContext();
 
-      // Display the agent's response
       if (result.completionMessage) {
         setMessages(prev => [...prev, { 
           role: 'assistant', 
@@ -117,9 +109,7 @@ const ChatPage = () => {
         }]);
       }
       
-      // If problem understanding is complete, update project status and redirect
       if (result.isComplete) {
-        // Update project status in database
         const { error } = await supabase
           .from('projects')
           .update({ 
@@ -136,14 +126,12 @@ const ChatPage = () => {
         } else {
           toast.success("Problem understanding complete!");
           
-          // After a short delay, navigate to analysis page
           setTimeout(() => {
             navigate('/analysis');
           }, 2000);
         }
       }
       
-      // Refresh the context in the project provider
       fetchProblemContext(project.id);
       
     } catch (error) {

@@ -148,7 +148,6 @@ const AnalysisPipelinePage = () => {
         updateProjectProgress('feature_analysis', 'in-progress');
 
         const featureAnalysisAgent = new OpenAIFeatureAnalysisAgent(currentProject.id, supabase);
-
         await featureAnalysisAgent.loadContext(currentProject.id);
 
         const { data: competitorData } = await supabase
@@ -175,7 +174,6 @@ const AnalysisPipelinePage = () => {
         updateProjectProgress('customer_insights', 'in-progress');
 
         const customerInsightsAgent = new OpenAICustomerInsightsAgent(currentProject.id, supabase);
-
         await customerInsightsAgent.loadContext(currentProject.id);
 
         const { data: featureData } = await supabase
@@ -184,7 +182,7 @@ const AnalysisPipelinePage = () => {
           .eq('project_id', currentProject.id)
           .single();
 
-        if (featureData && featureData.id) {
+        if (featureData) {
           const insightsResult = await customerInsightsAgent.analyzeCustomerInsights(featureData.id);
           await customerInsightsAgent.saveContext();
         } else {
@@ -202,7 +200,6 @@ const AnalysisPipelinePage = () => {
         updateProjectProgress('customer_personas', 'in-progress');
 
         const personaAgent = new OpenAICustomerPersonaAgent(currentProject.id, supabase);
-
         await personaAgent.loadContext(currentProject.id);
 
         const { data: marketResearchData } = await supabase
@@ -230,7 +227,6 @@ const AnalysisPipelinePage = () => {
         updateProjectProgress('opportunity_mapping', 'in-progress');
 
         const opportunityAgent = new OpenAIOpportunityMappingAgent(currentProject.id, supabase);
-
         await opportunityAgent.loadContext(currentProject.id);
 
         const { data: marketResearchData } = await supabase
