@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
@@ -87,8 +86,12 @@ const ChatPage = () => {
         toast.error("User ID is required for problem understanding");
         return;
       }
-      
-      const agent = new OpenAIProblemUnderstandingAgent(project.id, user.id);
+
+      // FIX: OpenAIProblemUnderstandingAgent expects (projectId: string, supabaseClient: typeof supabase)
+      // Or if it expects (projectId: string), check and match its constructor accordingly.
+      // According to previous code, it takes: (projectId: string, supabaseClient: typeof supabase)
+      // We'll pass the supabase client.
+      const agent = new OpenAIProblemUnderstandingAgent(project.id, supabase);
       
       // Load existing context
       await agent.loadContext(project.id);

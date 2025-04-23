@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useProject } from '@/lib/context/ProjectContext';
@@ -105,15 +104,11 @@ const AnalysisPipelinePage = () => {
         setProgress(5);
         updateProjectProgress('market_research', 'in-progress');
         
-        const marketResearchAgent = new OpenAIMarketResearchAgent(
-          currentProject.id, 
-          user.id
-        );
-        
+        const marketResearchAgent = new OpenAIMarketResearchAgent(currentProject.id, supabase);
         await marketResearchAgent.loadContext(currentProject.id);
         const marketResearchResult = await marketResearchAgent.analyzeMarket(problemContext);
         await marketResearchAgent.saveContext();
-        
+
         updateProjectProgress('market_research', 'complete');
         setProgress(15);
       } else {
@@ -124,28 +119,23 @@ const AnalysisPipelinePage = () => {
       if (currentProject.progress.competitor_analysis === 'pending') {
         setCurrentAgent('competitor_analysis');
         updateProjectProgress('competitor_analysis', 'in-progress');
-        
-        const competitorAnalysisAgent = new OpenAICompetitorAnalysisAgent(
-          currentProject.id, 
-          user.id
-        );
-        
+      
+        const competitorAnalysisAgent = new OpenAICompetitorAnalysisAgent(currentProject.id, supabase);
+
         await competitorAnalysisAgent.loadContext(currentProject.id);
-        
-        // Get market research context
+
         const { data: marketResearchData } = await supabase
           .from('market_research_context')
           .select('*')
           .eq('project_id', currentProject.id)
           .single();
-          
+
         if (marketResearchData) {
           const competitorResult = await competitorAnalysisAgent.analyzeCompetitors(marketResearchData);
           await competitorAnalysisAgent.saveContext();
         } else {
           throw new Error("Market research data not found");
         }
-        
         updateProjectProgress('competitor_analysis', 'complete');
         setProgress(30);
       } else {
@@ -156,28 +146,23 @@ const AnalysisPipelinePage = () => {
       if (currentProject.progress.feature_analysis === 'pending') {
         setCurrentAgent('feature_analysis');
         updateProjectProgress('feature_analysis', 'in-progress');
-        
-        const featureAnalysisAgent = new OpenAIFeatureAnalysisAgent(
-          currentProject.id, 
-          user.id
-        );
-        
+
+        const featureAnalysisAgent = new OpenAIFeatureAnalysisAgent(currentProject.id, supabase);
+
         await featureAnalysisAgent.loadContext(currentProject.id);
-        
-        // Get competitor analysis context
+
         const { data: competitorData } = await supabase
           .from('competitor_analysis_context')
           .select('*')
           .eq('project_id', currentProject.id)
           .single();
-          
+
         if (competitorData) {
-          const featureResult = await featureAnalysisAgent.analyzeFeatures(competitorData);
+          const featureResult = await featureAnalysisAgent.analyzeFeatures(competitorData.id);
           await featureAnalysisAgent.saveContext();
         } else {
           throw new Error("Competitor analysis data not found");
         }
-        
         updateProjectProgress('feature_analysis', 'complete');
         setProgress(50);
       } else {
@@ -188,34 +173,23 @@ const AnalysisPipelinePage = () => {
       if (currentProject.progress.customer_insights === 'pending') {
         setCurrentAgent('customer_insights');
         updateProjectProgress('customer_insights', 'in-progress');
-        
-        const customerInsightsAgent = new OpenAICustomerInsightsAgent(
-          currentProject.id, 
-          user.id
-        );
-        
+
+        const customerInsightsAgent = new OpenAICustomerInsightsAgent(currentProject.id, supabase);
+
         await customerInsightsAgent.loadContext(currentProject.id);
-        
-        // Get competitor analysis context and feature analysis context
-        const { data: competitorData } = await supabase
-          .from('competitor_analysis_context')
-          .select('*')
-          .eq('project_id', currentProject.id)
-          .single();
-          
+
         const { data: featureData } = await supabase
           .from('feature_analysis_context')
           .select('*')
           .eq('project_id', currentProject.id)
           .single();
-          
-        if (competitorData && featureData) {
-          const insightsResult = await customerInsightsAgent.analyzeCustomerInsights(competitorData, featureData);
+
+        if (featureData && featureData.id) {
+          const insightsResult = await customerInsightsAgent.analyzeCustomerInsights(featureData.id);
           await customerInsightsAgent.saveContext();
         } else {
-          throw new Error("Required context data not found");
+          throw new Error("Feature analysis context data not found");
         }
-        
         updateProjectProgress('customer_insights', 'complete');
         setProgress(70);
       } else {
@@ -226,28 +200,24 @@ const AnalysisPipelinePage = () => {
       if (currentProject.progress.customer_personas === 'pending') {
         setCurrentAgent('customer_personas');
         updateProjectProgress('customer_personas', 'in-progress');
-        
-        const personaAgent = new OpenAICustomerPersonaAgent(
-          currentProject.id, 
-          user.id
-        );
-        
+
+        const personaAgent = new OpenAICustomerPersonaAgent(currentProject.id, supabase);
+
         await personaAgent.loadContext(currentProject.id);
-        
-        // Get market research context
+
         const { data: marketResearchData } = await supabase
           .from('market_research_context')
           .select('*')
           .eq('project_id', currentProject.id)
           .single();
-          
+
         if (marketResearchData) {
           const personaResult = await personaAgent.generatePersonas(marketResearchData);
           await personaAgent.saveContext();
         } else {
           throw new Error("Market research data not found");
         }
-        
+
         updateProjectProgress('customer_personas', 'complete');
         setProgress(85);
       } else {
@@ -258,39 +228,35 @@ const AnalysisPipelinePage = () => {
       if (currentProject.progress.opportunity_mapping === 'pending') {
         setCurrentAgent('opportunity_mapping');
         updateProjectProgress('opportunity_mapping', 'in-progress');
-        
-        const opportunityAgent = new OpenAIOpportunityMappingAgent(
-          currentProject.id, 
-          user.id
-        );
-        
+
+        const opportunityAgent = new OpenAIOpportunityMappingAgent(currentProject.id, supabase);
+
         await opportunityAgent.loadContext(currentProject.id);
-        
-        // Get all required contexts
+
         const { data: marketResearchData } = await supabase
           .from('market_research_context')
           .select('*')
           .eq('project_id', currentProject.id)
           .single();
-          
+
         const { data: competitorData } = await supabase
           .from('competitor_analysis_context')
           .select('*')
           .eq('project_id', currentProject.id)
           .single();
-          
+
         const { data: featureData } = await supabase
           .from('feature_analysis_context')
           .select('*')
           .eq('project_id', currentProject.id)
           .single();
-          
+
         const { data: insightsData } = await supabase
           .from('customer_insights_context')
           .select('*')
           .eq('project_id', currentProject.id)
           .single();
-          
+
         if (marketResearchData && competitorData && featureData && insightsData) {
           const opportunityResult = await opportunityAgent.mapOpportunities(
             marketResearchData,
@@ -302,7 +268,7 @@ const AnalysisPipelinePage = () => {
         } else {
           throw new Error("Required context data not found");
         }
-        
+
         updateProjectProgress('opportunity_mapping', 'complete');
         setProgress(100);
       } else {
