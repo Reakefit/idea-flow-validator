@@ -1,338 +1,144 @@
-
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Card } from "@/components/ui/card";
-import { useAuth } from "@/lib/context/AuthContext";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useProject } from "@/lib/context/ProjectContext";
-import { OpenAIProblemUnderstandingAgent } from "@/lib/ai/openai-agent";
-import { supabase } from "@/integrations/supabase/client";
-import { ProblemUnderstandingResult } from "@/lib/ai/types";
-import { useNavigate } from "react-router-dom";
-import { toast } from "sonner";
+import { useAuth } from "@/lib/context/AuthContext";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
+import { toast } from 'sonner';
+
+// Import the supabase client directly
+import { supabase } from '@/lib/supabase';
+import { OpenAIProblemUnderstandingAgent } from '@/lib/ai/openai-agent';
+
+interface Message {
+  role: 'user' | 'assistant';
+  content: string;
+}
 
 const ChatPage = () => {
-  const { user } = useAuth();
-  const { currentProject, problemContext, fetchProblemContext } = useProject();
-  const [input, setInput] = useState("");
-  const [currentQuestion, setCurrentQuestion] = useState<string | null>(null);
-  const [isComplete, setIsComplete] = useState(false);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [agent, setAgent] = useState<OpenAIProblemUnderstandingAgent | null>(null);
-  const [conversation, setConversation] = useState<{ type: 'question' | 'response', content: string }[]>([]);
+  const { currentProject: project } = useProject();
+  const { user } = useAuth();
   const navigate = useNavigate();
 
-  // Initialize the agent when the component mounts
   useEffect(() => {
-    if (!currentProject) {
-      return;
+    if (!user) {
+      navigate('/login');
     }
+  }, [user, navigate]);
 
-    const openAiKey = process.env.NEXT_PUBLIC_OPENAI_API_KEY || "sk-dummy-key"; // Replace with your actual key or get from env
-    const newAgent = new OpenAIProblemUnderstandingAgent(openAiKey, currentProject.id, supabase);
-    setAgent(newAgent);
-    
-    // If we already have a problem context with a final statement, we're done
-    if (problemContext?.finalStatement) {
-      setIsComplete(true);
-      // Reconstruct conversation from problemContext
-      const reconstructedConversation = [];
-      
-      if (problemContext.initialStatement) {
-        reconstructedConversation.push({
-          type: 'response',
-          content: problemContext.initialStatement
-        });
-      }
-      
-      for (let i = 0; i < problemContext.clarifyingQuestions.length; i++) {
-        reconstructedConversation.push({
-          type: 'question',
-          content: problemContext.clarifyingQuestions[i]
-        });
-        
-        if (problemContext.userResponses[i]) {
-          reconstructedConversation.push({
-            type: 'response',
-            content: problemContext.userResponses[i].response
-          });
-        }
-      }
-      
-      if (problemContext.finalStatement) {
-        reconstructedConversation.push({
-          type: 'question',
-          content: "Thank you for sharing this information. I now have a comprehensive understanding of your project. Here's a summary of what I've gathered:"
-        });
-        reconstructedConversation.push({
-          type: 'question',
-          content: problemContext.finalStatement
-        });
-      }
-      
-      setConversation(reconstructedConversation);
-    } else {
-      // Start a new conversation
-      if (!problemContext || !problemContext.initialStatement) {
-        setCurrentQuestion("What problem are you trying to solve with your startup?");
-      } else {
-        setCurrentQuestion(null);
-        // Reconstruct conversation from partial problemContext
-        const reconstructedConversation = [];
-        
-        reconstructedConversation.push({
-          type: 'question',
-          content: "What problem are you trying to solve with your startup?"
-        });
-        
-        if (problemContext.initialStatement) {
-          reconstructedConversation.push({
-            type: 'response',
-            content: problemContext.initialStatement
-          });
-        }
-        
-        for (let i = 0; i < problemContext.clarifyingQuestions.length; i++) {
-          reconstructedConversation.push({
-            type: 'question',
-            content: problemContext.clarifyingQuestions[i]
-          });
-          
-          if (problemContext.userResponses[i]) {
-            reconstructedConversation.push({
-              type: 'response',
-              content: problemContext.userResponses[i].response
-            });
-          }
-        }
-        
-        if (problemContext.clarifyingQuestions.length > 0 && 
-            (!problemContext.userResponses || problemContext.userResponses.length < problemContext.clarifyingQuestions.length)) {
-          // There's an unanswered question
-          setCurrentQuestion(problemContext.clarifyingQuestions[problemContext.clarifyingQuestions.length - 1]);
-        } else if (!problemContext.finalStatement) {
-          // We need the next question
-          loadNextQuestion(problemContext.initialStatement);
-        }
-        
-        setConversation(reconstructedConversation);
-      }
-    }
-  }, [currentProject, problemContext]);
-
-  const loadNextQuestion = async (initialResponse: string) => {
-    if (!agent) return;
-    
-    try {
-      setIsLoading(true);
-      
-      let result: ProblemUnderstandingResult;
-      
-      if (!problemContext || !problemContext.clarifyingQuestions || problemContext.clarifyingQuestions.length === 0) {
-        // This is the first question, use understandProblem
-        result = await agent.understandProblem(initialResponse);
-      } else {
-        // There's no question to answer, proceed to completion
-        result = {
-          nextQuestion: null,
-          isComplete: true,
-          completionMessage: "We've gathered enough information to proceed with the analysis.",
-          understandingLevel: 100,
-          keyInsights: problemContext.keyInsights,
-          context: problemContext
-        };
-      }
-      
-      setCurrentQuestion(result.nextQuestion);
-      setIsComplete(result.isComplete);
-      
-      if (result.isComplete) {
-        // Generate final statement if needed
-        if (!problemContext?.finalStatement) {
-          const finalResult = await agent.generateFinalStatement();
-          setConversation(prev => [
-            ...prev,
-            { 
-              type: 'question', 
-              content: "Thank you for sharing this information. I now have a comprehensive understanding of your project. Here's a summary of what I've gathered:" 
-            },
-            { type: 'question', content: finalResult.finalStatement }
-          ]);
-        }
-        
-        // Refresh problem context
-        if (currentProject) {
-          await fetchProblemContext(currentProject.id);
-        }
-        
-        // Show completion toast
-        toast.success("Problem understanding complete! Moving to analysis phase.");
-        
-        // Navigate to analysis pipeline after a short delay
-        setTimeout(() => {
-          navigate('/analysis');
-        }, 3000);
-      }
-    } catch (error) {
-      console.error("Error loading next question:", error);
-      toast.error("Failed to process your response. Please try again.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleSubmit = async () => {
-    if (!input.trim() || !agent || !currentProject) return;
-    
-    try {
-      setIsLoading(true);
-      
-      const userResponse = input.trim();
-      setInput("");
-      
-      // Add user's response to conversation
-      setConversation(prev => [...prev, { type: 'response', content: userResponse }]);
-      
-      // If this is the first question (about the problem)
-      if (conversation.length === 0) {
-        setConversation([
-          { type: 'question', content: "What problem are you trying to solve with your startup?" },
-          { type: 'response', content: userResponse }
-        ]);
-        
-        loadNextQuestion(userResponse);
-        return;
-      }
-      
-      // Process the user's response to the current question
-      if (currentQuestion) {
-        const result = await agent.processUserResponse(currentQuestion, userResponse);
-        
-        if (result.nextQuestion) {
-          setCurrentQuestion(result.nextQuestion);
-          setConversation(prev => [...prev, { type: 'question', content: result.nextQuestion! }]);
-        }
-        
-        setIsComplete(result.isComplete);
-        
-        if (result.isComplete) {
-          // Generate final statement if needed
-          if (!problemContext?.finalStatement) {
-            const finalResult = await agent.generateFinalStatement();
-            setConversation(prev => [
-              ...prev,
-              { 
-                type: 'question', 
-                content: "Thank you for sharing this information. I now have a comprehensive understanding of your project. Here's a summary of what I've gathered:" 
-              },
-              { type: 'question', content: finalResult.finalStatement }
-            ]);
-          }
-          
-          // Refresh problem context
-          if (currentProject) {
-            await fetchProblemContext(currentProject.id);
-          }
-          
-          // Show completion toast
-          toast.success("Problem understanding complete! Moving to analysis phase.");
-          
-          // Navigate to analysis pipeline after a short delay
-          setTimeout(() => {
-            navigate('/analysis');
-          }, 3000);
-        }
-      }
-    } catch (error) {
-      console.error("Error processing response:", error);
-      toast.error("Failed to process your response. Please try again.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  if (!currentProject) {
+  if (!project) {
     return (
-      <div className="min-h-screen bg-insight-dark flex flex-col items-center justify-center p-4">
-        <Card className="w-full max-w-2xl p-8">
-          <div className="flex flex-col items-center justify-center">
-            <h2 className="text-2xl font-bold mb-4">No Project Selected</h2>
-            <p className="text-center mb-6">Please go to your dashboard and create or select a project.</p>
-            <Button onClick={() => navigate('/dashboard')}>Go to Dashboard</Button>
-          </div>
-        </Card>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Loading Project...</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Skeleton className="h-4 w-[200px]" />
+          <Separator className="my-2" />
+          <Skeleton className="h-4 w-[200px]" />
+        </CardContent>
+      </Card>
     );
   }
 
+  const handleSendMessage = async (message: string) => {
+    if (!message.trim()) return;
+
+    setMessages(prev => [...prev, { role: 'user', content: message }]);
+    setInput('');
+
+    try {
+      setIsLoading(true);
+      
+      // Initialize the agent using the imported supabase client
+      const agent = new OpenAIProblemUnderstandingAgent(project.id, supabase);
+      
+      // Load existing context
+      await agent.loadContext(project.id);
+
+      // Process the user's message
+      const result = await agent.understandProblem(message);
+
+      // Save the updated context
+      await agent.saveContext();
+
+      // Display the agent's response
+      setMessages(prev => [...prev, { role: 'assistant', content: result.completionMessage || 'Analysis complete.' }]);
+
+      if (result.nextQuestion) {
+        setMessages(prev => [...prev, { role: 'assistant', content: result.nextQuestion }]);
+      }
+    } catch (error) {
+      console.error("Error processing message:", error);
+      setMessages(prev => [...prev, { role: 'assistant', content: "I'm sorry, there was an error processing your request." }]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-insight-dark text-foreground pt-20 pb-10 px-4">
-      <div className="max-w-4xl mx-auto">
-        <Card className="glass-card p-6">
-          <div className="mb-6">
-            <h1 className="text-2xl md:text-3xl font-bold mb-2">Problem Understanding</h1>
-            <p className="text-muted-foreground">
-              Tell me about the problem you're solving so I can help validate your business idea.
-            </p>
-          </div>
-
-          <div className="space-y-6 mb-6 max-h-[50vh] overflow-y-auto rounded-lg p-4 bg-black/20">
-            {conversation.map((msg, index) => (
-              <div
-                key={index}
-                className={`flex ${
-                  msg.type === "question" ? "justify-start" : "justify-end"
-                }`}
-              >
-                <div
-                  className={`max-w-[80%] rounded-lg p-4 ${
-                    msg.type === "question"
-                      ? "bg-insight-blue/20 text-foreground"
-                      : "bg-primary/20 text-foreground"
-                  }`}
-                >
-                  {msg.content}
-                </div>
-              </div>
-            ))}
-            
-            {isLoading && (
-              <div className="flex justify-start">
-                <div className="max-w-[80%] rounded-lg p-4 bg-insight-blue/20">
-                  <div className="flex space-x-2">
-                    <div className="w-2 h-2 rounded-full bg-foreground/60 animate-pulse"></div>
-                    <div className="w-2 h-2 rounded-full bg-foreground/60 animate-pulse delay-150"></div>
-                    <div className="w-2 h-2 rounded-full bg-foreground/60 animate-pulse delay-300"></div>
+    <div className="container mx-auto h-screen flex flex-col">
+      <Card className="flex-grow flex flex-col">
+        <CardHeader>
+          <CardTitle>Problem Understanding Chat</CardTitle>
+        </CardHeader>
+        <CardContent className="flex-grow flex flex-col">
+          <ScrollArea className="flex-grow">
+            <div className="flex flex-col gap-2 p-2">
+              {messages.map((message, index) => (
+                <div key={index} className={`flex items-start ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  {message.role === 'assistant' && (
+                    <Avatar className="w-8 h-8 mr-2">
+                      <AvatarImage src="https://github.com/shadcn.png" alt="AI Avatar" />
+                      <AvatarFallback>AI</AvatarFallback>
+                    </Avatar>
+                  )}
+                  <div className={`rounded-md p-2 ${message.role === 'user' ? 'bg-blue-100 text-right' : 'bg-gray-100'}`}>
+                    <p className="text-sm">{message.content}</p>
                   </div>
+                  {message.role === 'user' && (
+                    <Avatar className="w-8 h-8 ml-2">
+                      <AvatarImage src={user?.user_metadata?.avatar_url} alt="User Avatar" />
+                      <AvatarFallback>{user?.email?.charAt(0).toUpperCase()}</AvatarFallback>
+                    </Avatar>
+                  )}
                 </div>
-              </div>
-            )}
-          </div>
-
-          <div className="flex gap-3">
-            <Textarea
+              ))}
+              {isLoading && (
+                <div className="flex items-center justify-center">
+                  <p>Loading...</p>
+                </div>
+              )}
+            </div>
+          </ScrollArea>
+        </CardContent>
+        <div className="p-4">
+          <div className="flex items-center space-x-2">
+            <Input
+              type="text"
+              placeholder="Enter your message..."
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder={isComplete ? "Problem understanding is complete." : "Type your response..."}
-              className="resize-none bg-white/5"
-              disabled={isLoading || isComplete}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSubmit();
+                if (e.key === 'Enter') {
+                  handleSendMessage(input);
                 }
               }}
             />
-            <Button
-              onClick={handleSubmit}
-              disabled={!input.trim() || isLoading || isComplete}
-              className="shrink-0 bg-insight-purple hover:bg-insight-purple/80"
-            >
-              {isLoading ? "Sending..." : "Send"}
+            <Button onClick={() => handleSendMessage(input)} disabled={isLoading}>
+              Send
             </Button>
           </div>
-        </Card>
-      </div>
+        </div>
+      </Card>
     </div>
   );
 };

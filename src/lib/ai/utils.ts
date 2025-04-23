@@ -15,11 +15,11 @@ export function convertToCustomerPersona(persona: Persona, projectId: string): C
       income: persona.demographics.income,
       education: persona.demographics.education
     },
-    pain_points: persona.pain_points,
+    pain_points: persona.painPoints,
     goals: persona.goals,
     behaviors: persona.behaviors,
-    created_at: persona.created_at,
-    updated_at: persona.updated_at
+    created_at: persona.createdAt,
+    updated_at: persona.updatedAt
   };
 }
 
@@ -135,4 +135,4 @@ export function updateContextTimestamp<T extends { updatedAt: string }>(context:
     ...context,
     updatedAt: new Date().toISOString()
   };
-} 
+}

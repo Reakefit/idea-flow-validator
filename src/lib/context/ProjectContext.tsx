@@ -1,6 +1,6 @@
 
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+import { supabase } from '@/lib/supabase';
 import { useAuth } from './AuthContext';
 import { toast } from 'sonner';
 
@@ -73,12 +73,28 @@ export const ProjectProvider = ({ children }: { children: React.ReactNode }) => 
       
       if (error) throw error;
       
-      setProjects(data || []);
+      // Transform the data to match the Project interface
+      const transformedData = data?.map(item => ({
+        ...item,
+        progress: typeof item.progress === 'string' 
+          ? JSON.parse(item.progress) 
+          : item.progress || {
+              problem_validation: 'pending',
+              market_research: 'pending',
+              competitor_analysis: 'pending',
+              feature_analysis: 'pending',
+              customer_insights: 'pending',
+              customer_personas: 'pending',
+              opportunity_mapping: 'pending'
+            }
+      })) as Project[];
+      
+      setProjects(transformedData || []);
       
       // Set the first project as the current project if none is selected
-      if (data && data.length > 0 && !currentProject) {
-        setCurrentProject(data[0]);
-        await fetchProblemContext(data[0].id);
+      if (transformedData && transformedData.length > 0 && !currentProject) {
+        setCurrentProject(transformedData[0]);
+        await fetchProblemContext(transformedData[0].id);
       }
     } catch (error: any) {
       console.error('Error fetching projects:', error);
@@ -110,11 +126,13 @@ export const ProjectProvider = ({ children }: { children: React.ReactNode }) => 
           projectId: data.project_id,
           initialStatement: data.initial_statement,
           understandingLevel: data.understanding_level,
-          clarifyingQuestions: data.clarifying_questions,
-          userResponses: data.user_responses,
-          keyInsights: data.key_insights,
+          clarifyingQuestions: data.clarifying_questions || [],
+          userResponses: Array.isArray(data.user_responses) 
+            ? data.user_responses 
+            : [],
+          keyInsights: data.key_insights || [],
           finalStatement: data.final_statement,
-          metadata: data.metadata,
+          metadata: data.metadata || {},
           createdAt: data.created_at,
           updatedAt: data.updated_at
         });
@@ -136,20 +154,42 @@ export const ProjectProvider = ({ children }: { children: React.ReactNode }) => 
       setIsLoading(true);
       setError(null);
       
+      const initialProgress = {
+        problem_validation: 'pending',
+        market_research: 'pending',
+        competitor_analysis: 'pending',
+        feature_analysis: 'pending',
+        customer_insights: 'pending',
+        customer_personas: 'pending',
+        opportunity_mapping: 'pending'
+      };
+      
       const { data, error } = await supabase
         .from('projects')
-        .insert({ name, user_id: user.id })
+        .insert({ 
+          name, 
+          user_id: user.id,
+          progress: initialProgress
+        })
         .select()
         .single();
       
       if (error) throw error;
       
       if (data) {
+        // Transform to match Project interface
+        const newProject = {
+          ...data,
+          progress: typeof data.progress === 'string' 
+            ? JSON.parse(data.progress) 
+            : data.progress || initialProgress
+        } as Project;
+        
         // Update the projects list and set the new project as current
-        setProjects(prev => [data, ...prev]);
-        setCurrentProject(data);
+        setProjects(prev => [newProject, ...prev]);
+        setCurrentProject(newProject);
         toast.success('Project created successfully!');
-        return data;
+        return newProject;
       }
       
       return null;
