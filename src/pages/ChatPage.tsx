@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
@@ -26,6 +27,8 @@ const ChatPage = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [agent, setAgent] = useState<OpenAIProblemUnderstandingAgent | null>(null);
+  const [currentQuestion, setCurrentQuestion] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) {
@@ -39,15 +42,68 @@ const ChatPage = () => {
       return;
     }
     
-    // Initialize with welcome message
-    if (messages.length === 0) {
-      setMessages([{
-        role: 'assistant',
-        content: "Hi there! I'm your idea validation assistant. Tell me about the problem you're trying to solve with your startup idea."
-      }]);
+    // Initialize agent if we have project and user
+    if (project && user && !agent) {
+      const newAgent = new OpenAIProblemUnderstandingAgent(project.id, user.id, supabase);
+      setAgent(newAgent);
+      
+      // Load existing context
+      newAgent.loadContext(project.id)
+        .then(() => {
+          const context = newAgent.getContext();
+          
+          // If we have existing questions and responses, reconstruct the conversation
+          if (context.initialStatement && context.clarifyingQuestions.length > 0) {
+            const reconstructedMessages: Message[] = [
+              { role: 'assistant', content: "Hi there! I'm your idea validation assistant. Tell me about the problem you're trying to solve with your startup idea." },
+              { role: 'user', content: context.initialStatement }
+            ];
+            
+            // Add existing Q&A pairs
+            context.userResponses.forEach((response, index) => {
+              if (index < context.clarifyingQuestions.length) {
+                reconstructedMessages.push({ 
+                  role: 'assistant', 
+                  content: context.clarifyingQuestions[index] 
+                });
+                reconstructedMessages.push({ 
+                  role: 'user', 
+                  content: response.response 
+                });
+              }
+            });
+            
+            // If there's a next question that hasn't been answered yet
+            const nextQuestionIndex = context.userResponses.length;
+            if (nextQuestionIndex < context.clarifyingQuestions.length) {
+              setCurrentQuestion(context.clarifyingQuestions[nextQuestionIndex]);
+              reconstructedMessages.push({ 
+                role: 'assistant', 
+                content: context.clarifyingQuestions[nextQuestionIndex] 
+              });
+            } else if (context.finalStatement) {
+              // If we've reached the final statement
+              reconstructedMessages.push({ 
+                role: 'assistant', 
+                content: "We've gathered enough information to proceed with the analysis." 
+              });
+            }
+            
+            setMessages(reconstructedMessages);
+          } else {
+            // No existing conversation, just show welcome message
+            setMessages([{
+              role: 'assistant',
+              content: "Hi there! I'm your idea validation assistant. Tell me about the problem you're trying to solve with your startup idea."
+            }]);
+          }
+        })
+        .catch(error => {
+          console.error("Error loading agent context:", error);
+          toast.error("Error loading previous conversation");
+        });
     }
-    
-  }, [user, navigate, project, problemContext, messages.length]);
+  }, [user, navigate, project, problemContext, agent]);
 
   useEffect(() => {
     // Scroll to bottom whenever messages change
@@ -62,39 +118,51 @@ const ChatPage = () => {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Loading Project...</CardTitle>
+          <CardTitle><Skeleton className="h-6 w-64" /></CardTitle>
         </CardHeader>
-        <CardContent>
-          <Skeleton className="h-4 w-[200px]" />
-          <Separator className="my-2" />
-          <Skeleton className="h-4 w-[200px]" />
+        <CardContent className="grid gap-4">
+          <div className="flex items-center space-x-4">
+            <span>Problem Validation:</span>
+            <Skeleton className="h-4 w-24" />
+          </div>
+          <div className="flex items-center space-x-4">
+            <span>Market Research:</span>
+            <Skeleton className="h-4 w-24" />
+          </div>
         </CardContent>
       </Card>
     );
   }
 
   const handleSendMessage = async (message: string) => {
-    if (!message.trim()) return;
-
+    if (!message.trim() || !agent) return;
+    
+    // Add user message to chat
     setMessages(prev => [...prev, { role: 'user', content: message }]);
     setInput('');
+    setIsLoading(true);
 
     try {
-      setIsLoading(true);
+      let result;
       
-      if (!user?.id || !project) {
-        toast.error("User ID and project are required for problem understanding");
+      // If this is the first message (initial problem statement)
+      if (messages.length === 1) {
+        // First message is always the welcome message, so this is initial problem
+        result = await agent.understandProblem(message);
+        setCurrentQuestion(result.nextQuestion);
+        
+      } else if (currentQuestion) {
+        // This is a response to a clarifying question
+        result = await agent.processUserResponse(currentQuestion, message);
+        setCurrentQuestion(result.nextQuestion);
+      } else {
+        // Shouldn't happen, but handle gracefully
+        toast.error("Unable to determine conversation state");
+        setIsLoading(false);
         return;
       }
 
-      const agent = new OpenAIProblemUnderstandingAgent(project.id, user.id, supabase);
-      
-      await agent.loadContext(project.id);
-
-      const result = await agent.understandProblem(message);
-
-      await agent.saveContext();
-
+      // If there's a completion message, show it
       if (result.completionMessage) {
         setMessages(prev => [...prev, { 
           role: 'assistant', 
@@ -102,6 +170,7 @@ const ChatPage = () => {
         }]);
       }
 
+      // If there's a next question, show it
       if (result.nextQuestion) {
         setMessages(prev => [...prev, { 
           role: 'assistant', 
@@ -109,7 +178,9 @@ const ChatPage = () => {
         }]);
       }
       
+      // Handle completion
       if (result.isComplete) {
+        // Update project status
         const { error } = await supabase
           .from('projects')
           .update({ 
@@ -126,14 +197,15 @@ const ChatPage = () => {
         } else {
           toast.success("Problem understanding complete!");
           
+          // Refresh context
+          fetchProblemContext(project.id);
+          
+          // After a short delay, navigate to analysis page
           setTimeout(() => {
             navigate('/analysis');
           }, 2000);
         }
       }
-      
-      fetchProblemContext(project.id);
-      
     } catch (error) {
       console.error("Error processing message:", error);
       setMessages(prev => [...prev, { 

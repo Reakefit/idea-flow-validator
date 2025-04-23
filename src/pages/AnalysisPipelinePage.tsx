@@ -121,7 +121,6 @@ const AnalysisPipelinePage = () => {
         updateProjectProgress('competitor_analysis', 'in-progress');
       
         const competitorAnalysisAgent = new OpenAICompetitorAnalysisAgent(currentProject.id, supabase);
-
         await competitorAnalysisAgent.loadContext(currentProject.id);
 
         const { data: marketResearchData } = await supabase
@@ -227,7 +226,7 @@ const AnalysisPipelinePage = () => {
         updateProjectProgress('opportunity_mapping', 'in-progress');
 
         const opportunityAgent = new OpenAIOpportunityMappingAgent(currentProject.id, supabase);
-        await opportunityAgent.loadContext(currentProject.id);
+        await opportunityAgent.loadContext();
 
         const { data: marketResearchData } = await supabase
           .from('market_research_context')
