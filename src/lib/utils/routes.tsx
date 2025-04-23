@@ -71,8 +71,19 @@ export const SmartRedirectRoute = ({ children }: { children: React.ReactNode }) 
     return <Navigate to="/dashboard" />;
   }
   
-  // If problem understanding is not completed, send to chat
+  // Check the current_phase field to determine where to redirect
+  if (currentProject.current_phase === 'problem_validation') {
+    return <Navigate to="/chat" />;
+  }
+  
+  if (currentProject.current_phase === 'analysis') {
+    return <Navigate to="/analysis" />;
+  }
+  
+  // If we don't have a specific phase but problem understanding is not completed,
+  // send to chat
   if (!problemContext || !problemContext.finalStatement) {
+    // Update the current phase to problem_validation
     return <Navigate to="/chat" />;
   }
   
@@ -83,6 +94,7 @@ export const SmartRedirectRoute = ({ children }: { children: React.ReactNode }) 
       currentProject.progress.customer_insights === 'pending' ||
       currentProject.progress.customer_personas === 'pending' ||
       currentProject.progress.opportunity_mapping === 'pending') {
+    // Update the current phase to analysis
     return <Navigate to="/analysis" />;
   }
   

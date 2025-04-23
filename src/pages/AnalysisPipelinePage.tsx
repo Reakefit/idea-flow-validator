@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useProject } from '@/lib/context/ProjectContext';
@@ -53,6 +54,11 @@ const AnalysisPipelinePage = () => {
 
     setIsLoading(false);
     
+    // Update project phase if needed
+    if (currentProject.current_phase !== 'analysis') {
+      updateProjectPhase('analysis');
+    }
+    
     // Check if we should start or continue the pipeline
     const shouldRunPipeline = 
       currentProject.progress.market_research === 'pending' || 
@@ -66,6 +72,24 @@ const AnalysisPipelinePage = () => {
       runAnalysisPipeline();
     }
   }, [currentProject, problemContext, user]);
+
+  // Function to update the project phase
+  const updateProjectPhase = async (phase: string) => {
+    if (!currentProject) return;
+    
+    try {
+      const { error } = await supabase
+        .from('projects')
+        .update({ current_phase: phase })
+        .eq('id', currentProject.id);
+        
+      if (error) {
+        console.error("Error updating project phase:", error);
+      }
+    } catch (error) {
+      console.error("Error updating project phase:", error);
+    }
+  };
 
   const updateProjectProgress = async (stage: string, status: string) => {
     if (!currentProject) return;
@@ -226,7 +250,7 @@ const AnalysisPipelinePage = () => {
         updateProjectProgress('opportunity_mapping', 'in-progress');
 
         const opportunityAgent = new OpenAIOpportunityMappingAgent(currentProject.id, supabase);
-        await opportunityAgent.loadContext();
+        await opportunityAgent.loadContext(); // No arguments needed
 
         const { data: marketResearchData } = await supabase
           .from('market_research_context')
@@ -272,6 +296,11 @@ const AnalysisPipelinePage = () => {
       
       setCurrentAgent(null);
       toast.success("Analysis pipeline completed successfully!");
+      
+      // Update project phase to completed
+      if (currentProject.progress.opportunity_mapping === 'complete') {
+        updateProjectPhase('completed');
+      }
       
       // Redirect to dashboard after a short delay
       setTimeout(() => {

@@ -29,6 +29,7 @@ const ChatPage = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [agent, setAgent] = useState<OpenAIProblemUnderstandingAgent | null>(null);
   const [currentQuestion, setCurrentQuestion] = useState<string | null>(null);
+  const [questionCount, setQuestionCount] = useState<number>(0);
 
   useEffect(() => {
     if (!user) {
@@ -38,6 +39,8 @@ const ChatPage = () => {
     
     // Check if we already have a problem context with a final statement
     if (project && problemContext?.finalStatement) {
+      // Update project phase if needed
+      updateProjectPhase('analysis');
       navigate('/analysis');
       return;
     }
@@ -77,6 +80,9 @@ const ChatPage = () => {
               }
             });
             
+            // Update question count based on existing responses
+            setQuestionCount(context.userResponses.length);
+            
             // If there's a next question that hasn't been answered yet
             const nextQuestionIndex = context.userResponses.length;
             if (nextQuestionIndex < context.clarifyingQuestions.length) {
@@ -107,12 +113,35 @@ const ChatPage = () => {
           toast.error("Error loading previous conversation");
         });
     }
+
+    // Update project phase
+    if (project && project.current_phase !== 'problem_validation') {
+      updateProjectPhase('problem_validation');
+    }
   }, [user, navigate, project, problemContext, agent]);
 
   useEffect(() => {
     // Scroll to bottom whenever messages change
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Function to update the project phase
+  const updateProjectPhase = async (phase: string) => {
+    if (!project) return;
+    
+    try {
+      const { error } = await supabase
+        .from('projects')
+        .update({ current_phase: phase })
+        .eq('id', project.id);
+        
+      if (error) {
+        console.error("Error updating project phase:", error);
+      }
+    } catch (error) {
+      console.error("Error updating project phase:", error);
+    }
+  };
 
   if (!user) {
     return null; // Will redirect in useEffect
@@ -159,6 +188,8 @@ const ChatPage = () => {
         // This is a response to a clarifying question
         result = await agent.processUserResponse(currentQuestion, message);
         setCurrentQuestion(result.nextQuestion);
+        // Increment question count
+        setQuestionCount(prev => prev + 1);
       } else {
         // Shouldn't happen, but handle gracefully
         toast.error("Unable to determine conversation state");
@@ -182,8 +213,8 @@ const ChatPage = () => {
         }]);
       }
       
-      // Handle completion
-      if (result.isComplete) {
+      // Handle completion - either due to reaching max questions (2) or explicit completion
+      if (result.isComplete || questionCount >= 1) { // Max 2 questions (initial + 1 follow-up)
         // Update project status
         const { error } = await supabase
           .from('projects')
@@ -191,7 +222,8 @@ const ChatPage = () => {
             progress: {
               ...project.progress,
               problem_validation: 'complete'
-            }
+            },
+            current_phase: 'analysis'
           })
           .eq('id', project.id);
           
