@@ -1,7 +1,3 @@
-
-// Fixed: Removed duplicate implementations of extractMarketInfo and generateFinalStatement.
-// Updated MAX_CLARIFYING_QUESTIONS to 2 as requested. Fixed related logic to handle 2 questions correctly.
-
 import { ProblemUnderstandingAgent, ProblemUnderstandingContext, ProblemUnderstandingMetadata, ProblemUnderstandingResult } from './types.js';
 import { OpenAI } from 'openai';
 import { supabase } from '@/lib/supabase/client';
@@ -52,9 +48,9 @@ export class OpenAIProblemUnderstandingAgent implements ProblemUnderstandingAgen
       throw new Error('User ID is required');
     }
 
-    // Initialize OpenAI with an API key from environment variables
+    // Initialize OpenAI with hardcoded API key
     this.openai = new OpenAI({
-      apiKey: process.env.NEXT_PUBLIC_OPENAI_API_KEY || 'fake-key-for-development',
+      apiKey: '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',
       dangerouslyAllowBrowser: true
     });
     
@@ -778,4 +774,3 @@ Generate a comprehensive final statement that synthesizes this information into 
     }
   }
 }
-
