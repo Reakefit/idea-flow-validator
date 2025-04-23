@@ -12,9 +12,9 @@ export interface CustomerPersona {
     income: string;
     education: string;
   };
-  pain_points: string[];
+  painPoints: string[];
   goals: string[];
   behaviors: string[];
-  created_at: string;
-  updated_at: string;
+  createdAt: string;
+  updatedAt: string;
 }

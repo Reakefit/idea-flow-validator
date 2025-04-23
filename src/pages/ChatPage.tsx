@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from "@/components/ui/button";
@@ -12,7 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from 'sonner';
 
 // Import the supabase client directly
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/integrations/supabase/client';
 import { OpenAIProblemUnderstandingAgent } from '@/lib/ai/openai-agent';
 
 interface Message {
@@ -59,7 +60,7 @@ const ChatPage = () => {
       setIsLoading(true);
       
       // Initialize the agent using the imported supabase client
-      const agent = new OpenAIProblemUnderstandingAgent(project.id, supabase);
+      const agent = new OpenAIProblemUnderstandingAgent(project.id, supabase, user?.id);
       
       // Load existing context
       await agent.loadContext(project.id);
