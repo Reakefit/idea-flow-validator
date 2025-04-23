@@ -1,5 +1,5 @@
 import { OpenAI } from 'openai';
-import { supabase } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase/client';
 import { 
   FeatureAnalysisContext, 
   FeatureAnalysisResult,
@@ -11,6 +11,8 @@ export class OpenAIFeatureAnalysisAgent {
   private openai: OpenAI;
   private projectId: string;
   private supabase: typeof supabase;
+  private maxRetries = 3;
+  private retryDelay = 5000; // 5 seconds
 
   constructor(projectId: string, supabaseClient: typeof supabase) {
     console.log('Initializing OpenAIFeatureAnalysisAgent with projectId:', projectId);
@@ -30,7 +32,8 @@ export class OpenAIFeatureAnalysisAgent {
       updatedAt: new Date().toISOString()
     };
     this.openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
+      apiKey: "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",
+      maxRetries: this.maxRetries,
       dangerouslyAllowBrowser: true
     });
     this.projectId = projectId;
@@ -91,157 +94,198 @@ export class OpenAIFeatureAnalysisAgent {
     }
   }
 
-  async analyzeFeatures(competitorAnalysisContextId: string): Promise<FeatureAnalysisResult> {
+  private async sleep(ms: number) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  private async retryWithBackoff<T>(fn: () => Promise<T>, retries = this.maxRetries): Promise<T> {
     try {
-      // First ensure our context is initialized
-      await this.initializeProjectRows();
-      
-      // Get the competitor analysis context for this project
-      const { data: competitorAnalysisContext, error: competitorError } = await this.supabase
-        .from('competitor_analysis_context')
-        .select('*')
-        .eq('id', competitorAnalysisContextId)
-        .single();
-
-      // Handle errors, accounting for PGRST116 (no data found)
-      if (competitorError) {
-        if (competitorError.code === 'PGRST116') {
-          console.log('No competitor analysis context found for ID:', competitorAnalysisContextId);
-          console.log('Using empty competitor analysis context');
-          // Proceed with empty data
-        } else {
-          console.error('Error fetching competitor analysis context:', competitorError);
-          throw new Error(`Failed to fetch competitor analysis context: ${competitorError.message}`);
-        }
+      return await fn();
+    } catch (error: any) {
+      if (error.status === 429 && retries > 0) {
+        const delay = this.retryDelay * (this.maxRetries - retries + 1);
+        console.log(`Rate limited, retrying in ${delay}ms...`);
+        await this.sleep(delay);
+        return this.retryWithBackoff(fn, retries - 1);
       }
-
-      // Update our context with the competitor analysis ID
-      this.context.competitorAnalysisContextId = competitorAnalysisContextId;
-      
-      // Create a default empty context if none was found
-      const analysisContext = competitorAnalysisContext || {
-        competitor_profiles: [],
-        feature_matrices: [],
-        review_analysis: [],
-        pricing_analysis: [],
-        market_position_analysis: []
-      };
-      
-      const response = await this.openai.chat.completions.create({
-        model: 'o3-mini',
-        messages: [
-          {
-            role: 'developer',
-            content: `Analyze features based on the following competitor analysis:
-            ${JSON.stringify(analysisContext, null, 2)}
-            
-            Provide a detailed analysis in the following JSON format:
-            {
-              "featureComparisonMatrix": [
-                {
-                  "feature": "string",
-                  "competitors": [
-                    {
-                      "name": "string",
-                      "implementation": "string",
-                      "differentiation": "string"
-                    }
-                  ],
-                  "marketGap": "string"
-                }
-              ],
-              "capabilityAnalysis": [
-                {
-                  "capability": "string",
-                  "description": "string",
-                  "importance": "high|medium|low",
-                  "complexity": "high|medium|low",
-                  "dependencies": ["string"]
-                }
-              ],
-              "documentationAnalysis": [
-                {
-                  "feature": "string",
-                  "documentationQuality": "excellent|good|fair|poor",
-                  "gaps": ["string"],
-                  "recommendations": ["string"]
-                }
-              ],
-              "technicalSpecifications": [
-                {
-                  "feature": "string",
-                  "requirements": ["string"],
-                  "constraints": ["string"],
-                  "architecture": "string"
-                }
-              ],
-              "integrationAnalysis": [
-                {
-                  "feature": "string",
-                  "integrationPoints": ["string"],
-                  "dependencies": ["string"],
-                  "challenges": ["string"]
-                }
-              ]
-            }`
-          }
-        ],
-        max_completion_tokens: 8000,
-        reasoning_effort: 'high'
-      });
-
-      console.log('Raw OpenAI response:', response.choices[0].message.content);
-
-      if (!response.choices[0].message.content) {
-        throw new Error('OpenAI response is empty');
-      }
-
-      let analysis;
-      try {
-        // Extract only the JSON object from the string in case there's any additional text
-        const jsonMatch = response.choices[0].message.content.match(/\{[\s\S]*\}/);
-        const jsonStr = jsonMatch ? jsonMatch[0] : response.choices[0].message.content;
-        analysis = JSON.parse(jsonStr);
-      } catch (error) {
-        console.error('Failed to parse OpenAI response:', response.choices[0].message.content);
-        throw new Error('Invalid JSON response from OpenAI');
-      }
-
-      if (!analysis || typeof analysis !== 'object') {
-        throw new Error('Invalid analysis format from OpenAI');
-      }
-
-      // Validate and set default values for each section
-      this.context.featureComparisonMatrix = analysis.featureComparisonMatrix || [];
-      this.context.capabilityAnalysis = analysis.capabilityAnalysis || [];
-      this.context.documentationAnalysis = analysis.documentationAnalysis || [];
-      this.context.technicalSpecifications = analysis.technicalSpecifications || [];
-      this.context.integrationAnalysis = analysis.integrationAnalysis || [];
-
-      console.log('Processed analysis:', {
-        featureComparisonMatrix: this.context.featureComparisonMatrix.length,
-        capabilityAnalysis: this.context.capabilityAnalysis.length,
-        documentationAnalysis: this.context.documentationAnalysis.length,
-        technicalSpecifications: this.context.technicalSpecifications.length,
-        integrationAnalysis: this.context.integrationAnalysis.length
-      });
-
-      // Save context
-      await this.saveContext();
-
-      return {
-        featureComparisonMatrix: this.context.featureComparisonMatrix,
-        capabilityAnalysis: this.context.capabilityAnalysis,
-        documentationAnalysis: this.context.documentationAnalysis,
-        technicalSpecifications: this.context.technicalSpecifications,
-        integrationAnalysis: this.context.integrationAnalysis,
-        nextQuestion: null,
-        isComplete: true
-      };
-    } catch (error) {
-      console.error('Error analyzing features:', error);
       throw error;
     }
+  }
+
+  async analyzeFeatures(competitorAnalysisContextId: string): Promise<FeatureAnalysisResult> {
+    if (!competitorAnalysisContextId) {
+      throw new Error('Invalid competitor analysis context ID');
+    }
+
+    return this.retryWithBackoff(async () => {
+      try {
+        // First ensure our context is initialized
+        await this.initializeProjectRows();
+        
+        // Ensure we have a valid string ID
+        if (!competitorAnalysisContextId || typeof competitorAnalysisContextId !== 'string') {
+          throw new Error('Invalid competitor analysis context ID');
+        }
+        
+        // Get the competitor analysis context for this project
+        const { data: competitorAnalysisContext, error: competitorError } = await this.supabase
+          .from('competitor_analysis_context')
+          .select('*')
+          .eq('id', competitorAnalysisContextId)
+          .single();
+
+        // Handle errors, accounting for PGRST116 (no data found)
+        if (competitorError) {
+          if (competitorError.code === 'PGRST116') {
+            console.log('No competitor analysis context found for ID:', competitorAnalysisContextId);
+            console.log('Using empty competitor analysis context');
+            // Proceed with empty data
+          } else {
+            console.error('Error fetching competitor analysis context:', competitorError);
+            throw new Error(`Failed to fetch competitor analysis context: ${competitorError.message}`);
+          }
+        }
+
+        // Update our context with the competitor analysis ID
+        this.context.competitorAnalysisContextId = competitorAnalysisContextId;
+        
+        // Create a default empty context if none was found
+        const analysisContext = competitorAnalysisContext || {
+          competitor_profiles: [],
+          feature_matrices: [],
+          review_analysis: [],
+          pricing_analysis: [],
+          market_position_analysis: []
+        };
+        
+        const response = await this.openai.chat.completions.create({
+          model: 'o3-mini',
+          max_completion_tokens: 12000,
+          reasoning_effort: 'high',
+          messages: [
+            {
+              role: 'system',
+              content: `You are an expert feature analysis agent specializing in deep feature analysis and comparison.
+              Your task is to analyze features based on competitor analysis using chain-of-thought reasoning.
+              
+              Step 1: Analyze the competitor analysis context
+              Step 2: Identify key features and capabilities
+              Step 3: Compare implementations across competitors
+              Step 4: Synthesize findings into structured insights
+              
+              Focus on providing specific, actionable insights rather than generic observations.
+              For each insight, include supporting data points or examples where possible.
+              
+              You must return your analysis in the following JSON format:
+              {
+                "featureComparisonMatrix": [
+                  {
+                    "feature": "string",
+                    "competitors": [
+                      {
+                        "name": "string",
+                        "implementation": "string",
+                        "differentiation": "string"
+                      }
+                    ],
+                    "marketGap": "string"
+                  }
+                ],
+                "capabilityAnalysis": [
+                  {
+                    "capability": "string",
+                    "description": "string",
+                    "importance": "high|medium|low",
+                    "complexity": "high|medium|low",
+                    "dependencies": ["string"]
+                  }
+                ],
+                "documentationAnalysis": [
+                  {
+                    "feature": "string",
+                    "documentationQuality": "excellent|good|fair|poor",
+                    "gaps": ["string"],
+                    "recommendations": ["string"]
+                  }
+                ],
+                "technicalSpecifications": [
+                  {
+                    "feature": "string",
+                    "requirements": ["string"],
+                    "constraints": ["string"],
+                    "architecture": "string"
+                  }
+                ],
+                "integrationAnalysis": [
+                  {
+                    "feature": "string",
+                    "integrationPoints": ["string"],
+                    "dependencies": ["string"],
+                    "challenges": ["string"]
+                  }
+                ]
+              }`
+            },
+            {
+              role: 'user',
+              content: `Competitor Analysis Context: ${JSON.stringify(analysisContext)}`
+            }
+          ]
+        });
+
+        console.log('Raw OpenAI response:', response.choices[0].message.content);
+
+        if (!response.choices[0].message.content) {
+          throw new Error('OpenAI response is empty');
+        }
+
+        let analysis;
+        try {
+          // Extract only the JSON object from the string in case there's any additional text
+          const jsonMatch = response.choices[0].message.content.match(/\{[\s\S]*\}/);
+          const jsonStr = jsonMatch ? jsonMatch[0] : response.choices[0].message.content;
+          analysis = JSON.parse(jsonStr);
+        } catch (error) {
+          console.error('Failed to parse OpenAI response:', response.choices[0].message.content);
+          throw new Error('Invalid JSON response from OpenAI');
+        }
+
+        if (!analysis || typeof analysis !== 'object') {
+          throw new Error('Invalid analysis format from OpenAI');
+        }
+
+        // Validate and set default values for each section
+        this.context.featureComparisonMatrix = analysis.featureComparisonMatrix || [];
+        this.context.capabilityAnalysis = analysis.capabilityAnalysis || [];
+        this.context.documentationAnalysis = analysis.documentationAnalysis || [];
+        this.context.technicalSpecifications = analysis.technicalSpecifications || [];
+        this.context.integrationAnalysis = analysis.integrationAnalysis || [];
+
+        console.log('Processed analysis:', {
+          featureComparisonMatrix: this.context.featureComparisonMatrix.length,
+          capabilityAnalysis: this.context.capabilityAnalysis.length,
+          documentationAnalysis: this.context.documentationAnalysis.length,
+          technicalSpecifications: this.context.technicalSpecifications.length,
+          integrationAnalysis: this.context.integrationAnalysis.length
+        });
+
+        // Save context
+        await this.saveContext();
+
+        return {
+          featureComparisonMatrix: this.context.featureComparisonMatrix,
+          capabilityAnalysis: this.context.capabilityAnalysis,
+          documentationAnalysis: this.context.documentationAnalysis,
+          technicalSpecifications: this.context.technicalSpecifications,
+          integrationAnalysis: this.context.integrationAnalysis,
+          nextQuestion: null,
+          isComplete: true
+        };
+      } catch (error) {
+        console.error('Error analyzing features:', error);
+        throw error;
+      }
+    });
   }
 
   async saveContext(): Promise<void> {
@@ -379,7 +423,7 @@ export class OpenAIFeatureAnalysisAgent {
         model: 'o3-mini',
         messages: [
           {
-            role: 'developer',
+            role: 'system',
             content: `Refine the feature analysis based on the following feedback:
             ${feedback}
             
@@ -393,8 +437,7 @@ export class OpenAIFeatureAnalysisAgent {
             4. Enhanced integration analysis`
           }
         ],
-        max_completion_tokens: 8000,
-        reasoning_effort: 'high'
+        max_tokens: 8000
       });
 
       if (!response.choices[0].message.content) {

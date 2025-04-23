@@ -1,5 +1,5 @@
-import { OpenAI } from 'openai';
-import { supabase } from '@/lib/supabase';
+import OpenAI from 'openai';
+import { supabase } from '@/lib/supabase/client';
 import type { Database } from '@/lib/supabase/types';
 import { 
   CompetitorAnalysisAgent,
@@ -39,9 +39,8 @@ export class OpenAICompetitorAnalysisAgent implements CompetitorAnalysisAgent {
       updatedAt: new Date().toISOString()
     };
     
-    // Use process.env for API key
     this.openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
+      apiKey: "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",
       dangerouslyAllowBrowser: true
     });
     
@@ -71,87 +70,21 @@ export class OpenAICompetitorAnalysisAgent implements CompetitorAnalysisAgent {
   
   async saveContext(): Promise<void> {
     try {
-      console.log('Attempting to save competitor analysis context for project:', this.projectId);
-      
-      // Ensure all arrays are properly initialized to prevent database errors
-      if (!Array.isArray(this.context.competitorProfiles)) {
-        this.context.competitorProfiles = [];
-      }
-      
-      if (!Array.isArray(this.context.featureMatrices)) {
-        this.context.featureMatrices = [];
-      }
-      
-      if (!Array.isArray(this.context.reviewAnalysis)) {
-        this.context.reviewAnalysis = [];
-      }
-      
-      if (!Array.isArray(this.context.pricingAnalysis)) {
-        this.context.pricingAnalysis = [];
-      }
-      
-      if (!Array.isArray(this.context.marketPositionAnalysis)) {
-        this.context.marketPositionAnalysis = [];
-      }
-      
-      const { data: existingContext, error: fetchError } = await this.supabase
-        .from('competitor_analysis_context')
-        .select('*')
-        .eq('project_id', this.projectId)
+      const { data, error } = await supabase
+        .from('competitor_analysis_contexts')
+        .upsert({
+          id: this.context.id || crypto.randomUUID(),
+          project_id: this.context.projectId,
+          context: this.context,
+          updated_at: new Date().toISOString()
+        })
+        .select()
         .single();
-      
-      if (fetchError && fetchError.code !== 'PGRST116') {
-        console.error('Error fetching existing competitor analysis context:', fetchError);
-        throw fetchError;
-      }
-      
-      let result;
-      if (existingContext) {
-        console.log('Updating existing competitor analysis context');
-        result = await this.supabase
-          .from('competitor_analysis_context')
-          .update({
-            market_research_context_id: this.context.marketResearchContextId,
-            competitor_profiles: this.context.competitorProfiles,
-            feature_matrices: this.context.featureMatrices,
-            review_analysis: this.context.reviewAnalysis,
-            pricing_analysis: this.context.pricingAnalysis,
-            market_position_analysis: this.context.marketPositionAnalysis,
-            updated_at: new Date().toISOString()
-          })
-          .eq('project_id', this.projectId)
-          .select()
-          .single();
-      } else {
-        console.log('Creating new competitor analysis context');
-        result = await this.supabase
-          .from('competitor_analysis_context')
-          .insert({
-            project_id: this.projectId,
-            market_research_context_id: this.context.marketResearchContextId,
-            competitor_profiles: this.context.competitorProfiles,
-            feature_matrices: this.context.featureMatrices,
-            review_analysis: this.context.reviewAnalysis,
-            pricing_analysis: this.context.pricingAnalysis,
-            market_position_analysis: this.context.marketPositionAnalysis,
-            created_at: this.context.createdAt,
-            updated_at: new Date().toISOString()
-          })
-          .select()
-          .single();
-      }
-      
-      if (result.error) {
-        console.error('Error saving competitor analysis context:', result.error);
-        throw result.error;
-      }
-      
-      if (result.data) {
-        console.log('Successfully saved competitor analysis context');
-        this.context.id = result.data.id;
-      }
+
+      if (error) throw error;
+      if (data) this.context.id = data.id;
     } catch (error) {
-      console.error('Error in saveContext:', error);
+      console.error('Error saving competitor analysis context:', error);
       throw error;
     }
   }
@@ -318,7 +251,17 @@ export class OpenAICompetitorAnalysisAgent implements CompetitorAnalysisAgent {
           type: 'function',
           function: {
             name: 'web_search',
-            description: 'Search the web for competitor information'
+            description: 'Search the web for additional market insights',
+            parameters: {
+              type: 'object',
+              properties: {
+                query: {
+                  type: 'string',
+                  description: 'The search query'
+                }
+              },
+              required: ['query']
+            }
           }
         }]
       });
@@ -674,5 +617,115 @@ export class OpenAICompetitorAnalysisAgent implements CompetitorAnalysisAgent {
       console.error('Error in refineAnalysis:', error);
       throw error;
     }
+  }
+
+  private async analyzeCompetitorProfiles(profiles: CompetitorProfile[]): Promise<CompetitorProfile[]> {
+    const response = await this.openai.chat.completions.create({
+      model: 'o3-mini',
+      max_completion_tokens: 12000,
+      reasoning_effort: 'high',
+      messages: [
+        {
+          role: 'system',
+          content: 'You are an expert in competitor analysis. Analyze the provided competitor profiles and provide detailed insights.'
+        },
+        {
+          role: 'user',
+          content: JSON.stringify(profiles)
+        }
+      ],
+      functions: [
+        {
+          name: 'update_profiles',
+          description: 'Update the competitor profiles with detailed analysis',
+          parameters: {
+            type: 'object',
+            properties: {
+              profiles: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    id: { type: 'string' },
+                    name: { type: 'string' },
+                    description: { type: 'string' },
+                    coreFeatures: { type: 'array', items: { type: 'string' } },
+                    strengths: { type: 'array', items: { type: 'string' } },
+                    weaknesses: { type: 'array', items: { type: 'string' } },
+                    pricingModel: { type: 'string' },
+                    marketShare: { type: 'string' },
+                    customerFeedback: { type: 'array', items: { type: 'string' } },
+                    recentUpdates: { type: 'array', items: { type: 'string' } }
+                  },
+                  required: ['id', 'name', 'description', 'coreFeatures', 'strengths', 'weaknesses', 'pricingModel', 'marketShare', 'customerFeedback', 'recentUpdates']
+                }
+              }
+            },
+            required: ['profiles']
+          }
+        }
+      ],
+      function_call: { name: 'update_profiles' }
+    });
+
+    const result = JSON.parse(response.choices[0].message.function_call?.arguments || '{}');
+    return result.profiles;
+  }
+
+  private async analyzeFeatureMatrices(matrices: FeatureMatrix[]): Promise<FeatureMatrix[]> {
+    const response = await this.openai.chat.completions.create({
+      model: 'o3-mini',
+      max_completion_tokens: 12000,
+      reasoning_effort: 'high',
+      messages: [
+        {
+          role: 'system',
+          content: 'You are an expert in feature analysis. Analyze the provided feature matrices and identify market gaps.'
+        },
+        {
+          role: 'user',
+          content: JSON.stringify(matrices)
+        }
+      ],
+      functions: [
+        {
+          name: 'update_matrices',
+          description: 'Update the feature matrices with detailed analysis',
+          parameters: {
+            type: 'object',
+            properties: {
+              matrices: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    feature: { type: 'string' },
+                    competitors: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          name: { type: 'string' },
+                          implementation: { type: 'string' },
+                          differentiation: { type: 'string' }
+                        },
+                        required: ['name', 'implementation', 'differentiation']
+                      }
+                    },
+                    marketGap: { type: 'string' }
+                  },
+                  required: ['feature', 'competitors', 'marketGap']
+                }
+              }
+            },
+            required: ['matrices']
+          }
+        }
+      ],
+      function_call: { name: 'update_matrices' }
+    });
+
+    const result = JSON.parse(response.choices[0].message.function_call?.arguments || '{}');
+    return result.matrices;
   }
 } 

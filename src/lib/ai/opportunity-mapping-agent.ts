@@ -41,7 +41,7 @@ export class OpenAIOpportunityMappingAgent {
       updatedAt: new Date().toISOString()
     };
     this.openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
+      apiKey: "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",
       dangerouslyAllowBrowser: true
     });
     this.projectId = projectId;
@@ -107,6 +107,31 @@ export class OpenAIOpportunityMappingAgent {
       // First ensure our context is initialized
       await this.initializeProjectRows();
 
+      // First check if we already have a context
+      const { data: existingContext, error: fetchError } = await this.supabase
+        .from('opportunity_mapping_context')
+        .select('*')
+        .eq('project_id', this.projectId)
+        .single();
+
+      if (fetchError && fetchError.code !== 'PGRST116') {
+        console.error('Error checking for existing context:', fetchError);
+        throw fetchError;
+      }
+
+      if (existingContext) {
+        console.log('Found existing opportunity mapping context for project:', this.projectId);
+        return {
+          marketGaps: existingContext.market_gaps || [],
+          strategicOpportunities: existingContext.strategic_opportunities || [],
+          recommendations: existingContext.recommendations || [],
+          riskAssessment: existingContext.risk_assessment || [],
+          implementationRoadmap: existingContext.implementation_roadmap || [],
+          nextQuestion: null,
+          isComplete: true
+        };
+      }
+
       // Fetch all required contexts using project_id
       const [
         { data: marketResearch, error: marketResearchError },
@@ -156,9 +181,11 @@ export class OpenAIOpportunityMappingAgent {
 
       const response = await this.openai.chat.completions.create({
         model: 'o3-mini',
+        max_completion_tokens: 20000,
+        reasoning_effort: 'high',
         messages: [
           {
-            role: 'developer',
+            role: 'system',
             content: `Analyze opportunities based on the following comprehensive context. IMPORTANT: Base your analysis on actual research and data from the provided contexts. Do not hallucinate or make assumptions. Focus on concrete, evidence-based insights:
 
             Market Research: ${JSON.stringify(marketResearchData, null, 2)}
@@ -247,9 +274,7 @@ export class OpenAIOpportunityMappingAgent {
               required: ['query']
             }
           }
-        }],
-        max_completion_tokens: 12000,
-        reasoning_effort: 'high'
+        }]
       });
 
       console.log('Raw OpenAI response:', response.choices[0].message.content);
@@ -333,7 +358,7 @@ export class OpenAIOpportunityMappingAgent {
             }
           }
         }],
-        max_completion_tokens: 8000,
+        max_completion_tokens: 12000,
         reasoning_effort: 'high'
       });
 

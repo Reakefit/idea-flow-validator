@@ -1,4 +1,3 @@
-
 import { cn } from "@/lib/utils";
 import { GradientButton } from "../ui/gradient-button";
 import { useEffect, useState } from "react";
@@ -96,22 +95,20 @@ const Navbar = ({ className }: NavbarProps) => {
               >
                 Problem Chat
               </Link>
+              <Link
+                to="/interviews"
+                className="text-sm font-medium text-foreground/80 hover:text-foreground transition-colors"
+              >
+                Interviews
+              </Link>
               {currentProject && currentProject.progress.problem_validation === 'complete' && (
                 <>
                   <Link
-                    to="/analysis"
+                    to="/insights"
                     className="text-sm font-medium text-foreground/80 hover:text-foreground transition-colors"
                   >
-                    Analysis
+                    Insights
                   </Link>
-                  {currentProject.progress.opportunity_mapping === 'complete' && (
-                    <Link
-                      to="/insights"
-                      className="text-sm font-medium text-foreground/80 hover:text-foreground transition-colors"
-                    >
-                      Insights
-                    </Link>
-                  )}
                 </>
               )}
             </>

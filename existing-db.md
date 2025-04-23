@@ -172,13 +172,15 @@ Detailed individual persona context (used later for matching).
 |----------------------|---------|--------------------------------------|
 | id                   | `uuid`  | PK                                   |
 | project_id           | `uuid`  | FK → `projects.id`                   |
-| persona_profile      | `jsonb` | One generated persona (complete)     |
+| personas             | `jsonb` | jsonb of personas   |
 | market_research_context | `uuid` | FK → `market_research_context.id`   |
 | created_at           | `timestampz` |                                   |
 | updated_at           | `timestampz` |                                   |
 | status               | `text`  |                                      |
 | last_updated         | `timestampz` |                                   |
 
+eg for personas:
+[{"age": 35, "name": "John Doe", "goals": "Desires to have up-to-date technology tools to assist in his work. He's interested in productivity apps that help him manage his time and tasks more efficiently.", "quotes": "I'm always looking for ways technology can help me work smarter, not harder.", "behaviors": "Technologically savvy. Often the first one to adopt new technology among his peers. Spends significant time researching the best apps and tools for his needs.", "occupation": "Engineer", "painPoints": "Often finds it difficult to balance his work and personal life. He struggles to find apps designed with his specific needs as an engineer in mind.", "preferences": "Prefers apps that integrate with devices he already uses. Prioritizes functionality and usability over cost. Likes trying out new technology.", "usageScenarios": "John uses productivity apps to manage his tasks at work. He uses automation tools to streamline repetitive tasks. At home, John uses smart home technology to automate routine tasks."}, {"age": 28, "name": "Jane Smith", "goals": "Wants to stay informed about marketing trends and best practices. She's always searching for new marketing tools to improve her campaigns.", "quotes": "Keeping up with the latest marketing trends is essential for my job. I need tools that can help me stay ahead.", "behaviors": "Regularly reads marketing blogs and attends webinars. Frequent user of social media networks. Often trials different marketing tools to find the most effective ones.", "occupation": "Marketing Specialist", "painPoints": "Has difficulty keeping track of all the information she needs for her job. Struggles to find effective yet affordable marketing tools.", "preferences": "Prefers tools that provide actionable insights and user-friendly interfaces. Appreciates products that provide value for money. Likes brands that are transparent and customer-centric.", "usageScenarios": "Jane uses marketing tools to create and track her marketing campaigns. She uses CRM software to manage her relationships with customers. She also uses project management tools to manage her tasks."}]
 ---
 
 ## 🎙️ `interviews`

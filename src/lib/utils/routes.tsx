@@ -4,7 +4,6 @@ import RegisterPage from '@/pages/RegisterPage';
 import Index from '@/pages/Index';
 import ChatPage from '@/pages/ChatPage';
 import DashboardPage from '@/pages/DashboardPage';
-import AnalysisPipelinePage from '@/pages/AnalysisPipelinePage';
 import InterviewAssistantPage from '@/pages/InterviewAssistantPage';
 import InterviewSummaryPage from '@/pages/InterviewSummaryPage';
 import ConsolidatedInsightsPage from '@/pages/ConsolidatedInsightsPage';
@@ -39,20 +38,12 @@ const getRoutes = (): RouteConfig[] => [
     element: <ProtectedRoute><DashboardPage /></ProtectedRoute>
   },
   {
-    path: '/analysis',
-    element: <ProtectedRoute><AnalysisPipelinePage /></ProtectedRoute>
-  },
-  {
-    path: '/interview-assistant',
-    element: <SmartRedirectRoute><InterviewAssistantPage /></SmartRedirectRoute>
-  },
-  {
-    path: '/interview-summary',
-    element: <SmartRedirectRoute><InterviewSummaryPage /></SmartRedirectRoute>
+    path: '/interviews',
+    element: <ProtectedRoute><InterviewAssistantPage /></ProtectedRoute>
   },
   {
     path: '/insights',
-    element: <SmartRedirectRoute><ConsolidatedInsightsPage /></SmartRedirectRoute>
+    element: <ProtectedRoute><ConsolidatedInsightsPage /></ProtectedRoute>
   },
   {
     path: '*',

@@ -1,4 +1,4 @@
-import { createBrowserClient } from '@supabase/ssr';
+import { createClient } from '@supabase/supabase-js';
 
 // Database types
 export type Database = {
@@ -609,12 +609,8 @@ export type Database = {
   };
 };
 
-// Hardcoded values for Supabase
-const supabaseUrl = 'https://hrsyrvidofafaxfeonol.supabase.co';
-const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhyc3lydmlkb2ZhZmF4ZmVvbm9sIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQ0NTc3MzMsImV4cCI6MjA2MDAzMzczM30.vPAaie42E5bIHgS5Ff0Ur2HjKgrF2Bl03HtscSbHhgY';
-
 // Create a single supabase client for interacting with your database
-export const supabase = createBrowserClient<Database>(
-  supabaseUrl,
-  supabaseAnonKey
+export const supabase = createClient(
+  'https://hrsyrvidofafaxfeonol.supabase.co',
+  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imhyc3lydmlkb2ZhZmF4ZmVvbm9sIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc0NDQ1NzczMywiZXhwIjoyMDYwMDMzNzMzfQ.qhtTY0lMB6uQMLeFRd7LD4kGLEuGMoGyr4Thv4MZTlc'
 );

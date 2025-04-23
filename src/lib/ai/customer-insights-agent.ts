@@ -1,5 +1,5 @@
-import { OpenAI } from 'openai';
-import { supabase } from '@/lib/supabase';
+import OpenAI from 'openai';
+import { supabase } from '@/lib/supabase/client';
 import { 
   CustomerInsightsContext, 
   CustomerInsightsResult,
@@ -22,7 +22,7 @@ export class OpenAICustomerInsightsAgent {
     }
     this.projectId = projectId;
     this.openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
+      apiKey: "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",
       dangerouslyAllowBrowser: true
     });
     this.supabase = supabaseClient;
@@ -353,7 +353,7 @@ export class OpenAICustomerInsightsAgent {
             description: 'Search the web for additional customer information'
           }
         }],
-        max_completion_tokens: 8000,
+        max_completion_tokens: 12000,
         reasoning_effort: 'high'
       });
 

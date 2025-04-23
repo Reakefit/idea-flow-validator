@@ -37,7 +37,7 @@ export class OpenAIMarketResearchAgent implements MarketResearchAgent {
       updatedAt: new Date().toISOString()
     };
     this.openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
+      apiKey: "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",
       dangerouslyAllowBrowser: true
     });
     this.projectId = projectId;
@@ -54,7 +54,7 @@ export class OpenAIMarketResearchAgent implements MarketResearchAgent {
       console.log(`🤖 Market Research: Calling OpenAI API...`);
       const response = await this.openai.chat.completions.create({
         model: 'o3-mini',
-        max_completion_tokens: 8000,
+        max_completion_tokens: 12000,
         reasoning_effort: 'high',
         messages: [
           {
@@ -224,7 +224,7 @@ export class OpenAIMarketResearchAgent implements MarketResearchAgent {
     try {
       const response = await this.openai.chat.completions.create({
         model: 'o3-mini',
-        max_completion_tokens: 8000,
+        max_completion_tokens: 12000,
         reasoning_effort: 'high',
         messages: [
           {

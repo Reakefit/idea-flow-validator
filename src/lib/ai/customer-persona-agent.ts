@@ -25,7 +25,7 @@ export class OpenAICustomerPersonaAgent implements CustomerPersonaAgent {
       updatedAt: new Date().toISOString()
     };
     this.openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
+      apiKey: "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",
       dangerouslyAllowBrowser: true
     });
     this.projectId = projectId;
@@ -34,79 +34,118 @@ export class OpenAICustomerPersonaAgent implements CustomerPersonaAgent {
 
   async generatePersonas(marketResearchContext: MarketResearchContext): Promise<CustomerPersonaResult> {
     try {
-      const response = await this.openai.chat.completions.create({
-        model: "gpt-4",
-        messages: [
-          {
-            role: "system",
-            content: `You are a customer persona generation expert. Based on the market research context, generate detailed customer personas that represent the target audience segments. Each persona should include:
-            - Name
-            - Age
-            - Occupation
-            - Goals
-            - Pain Points
-            - Behaviors
-            - Preferences
-            - Quotes
-            - Usage Scenarios
-            
-            The personas should be realistic and based on the market research data provided. Return the response as a valid JSON object with the following structure:
-            {
-              "personas": [
+      const maxRetries = 3;
+      let retryCount = 0;
+      let delay = 1000; // Start with 1 second delay
+
+      while (retryCount < maxRetries) {
+        try {
+          const response = await this.openai.chat.completions.create({
+            model: 'o3-mini',
+            max_completion_tokens: 12000,
+            reasoning_effort: 'high',
+            messages: [
+              {
+                role: 'system',
+                content: `You are a customer persona generation expert. Based on the market research context, generate detailed customer personas that represent the target audience segments. Each persona should include:
+                - Name
+                - Age
+                - Occupation
+                - Goals
+                - Pain Points
+                - Behaviors
+                - Preferences
+                - Quotes
+                - Usage Scenarios
+                
+                The personas should be realistic and based on the market research data provided. Return the response as a valid JSON object with the following structure:
                 {
-                  "name": "string",
-                  "age": number,
-                  "occupation": "string",
-                  "goals": "string",
-                  "painPoints": "string",
-                  "behaviors": "string",
-                  "preferences": "string",
-                  "quotes": "string",
-                  "usageScenarios": "string"
+                  "personas": [
+                    {
+                      "name": "string",
+                      "age": number,
+                      "occupation": "string",
+                      "goals": "string",
+                      "painPoints": "string",
+                      "behaviors": "string",
+                      "preferences": "string",
+                      "quotes": "string",
+                      "usageScenarios": "string"
+                    }
+                  ]
                 }
-              ]
-            }
-            
-            Do not include any text before or after the JSON object.`
-          },
-          {
-            role: 'user',
-            content: `Market Research Context: ${JSON.stringify(marketResearchContext)}`
+                
+                Do not include any text before or after the JSON object.`
+              },
+              {
+                role: 'user',
+                content: `Market Research Context: ${JSON.stringify(marketResearchContext)}`
+              }
+            ],
+            tools: [{
+              type: 'function',
+              function: {
+                name: 'web_search',
+                description: 'Search the web for additional market insights',
+                parameters: {
+                  type: 'object',
+                  properties: {
+                    query: {
+                      type: 'string',
+                      description: 'The search query'
+                    }
+                  },
+                  required: ['query']
+                }
+              }
+            }]
+          });
+
+          if (!response.choices[0].message.content) {
+            throw new Error('OpenAI response is empty');
           }
-        ]
-      });
 
-      if (!response.choices[0].message.content) {
-        throw new Error('OpenAI response is empty');
-      }
+          let analysis;
+          try {
+            // Extract JSON from the response
+            const jsonMatch = response.choices[0].message.content.match(/\{[\s\S]*\}/);
+            const jsonString = jsonMatch ? jsonMatch[0] : response.choices[0].message.content;
+            analysis = JSON.parse(jsonString);
+          } catch (error) {
+            console.error('Failed to parse OpenAI response:', response.choices[0].message.content);
+            throw new Error('Invalid JSON response from OpenAI');
+          }
 
-      let analysis;
-      try {
-        // Extract JSON from the response
-        const jsonMatch = response.choices[0].message.content.match(/\{[\s\S]*\}/);
-        const jsonString = jsonMatch ? jsonMatch[0] : response.choices[0].message.content;
-        analysis = JSON.parse(jsonString);
-      } catch (error) {
-        console.error('Failed to parse OpenAI response:', response.choices[0].message.content);
-        throw new Error('Invalid JSON response from OpenAI');
+          if (!analysis || typeof analysis !== 'object' || !Array.isArray(analysis.personas)) {
+            throw new Error('Invalid analysis format from OpenAI');
+          }
+          
+          this.context.personas = analysis.personas;
+          this.context.marketResearchContext = marketResearchContext;
+          this.context.updatedAt = new Date().toISOString();
+          
+          await this.saveContext();
+          
+          return {
+            personas: this.context.personas,
+            nextQuestion: null,
+            isComplete: true,
+            context: this.context
+          };
+        } catch (error: any) {
+          if (error.status === 429) {
+            retryCount++;
+            if (retryCount === maxRetries) {
+              throw new Error(`Rate limit exceeded after ${maxRetries} retries`);
+            }
+            // Exponential backoff
+            delay *= 2;
+            await new Promise(resolve => setTimeout(resolve, delay));
+            continue;
+          }
+          throw error;
+        }
       }
-
-      if (!analysis || typeof analysis !== 'object' || !Array.isArray(analysis.personas)) {
-        throw new Error('Invalid analysis format from OpenAI');
-      }
-      
-      this.context.personas = analysis.personas;
-      this.context.marketResearchContext = marketResearchContext;
-      this.context.updatedAt = new Date().toISOString();
-      
-      await this.saveContext();
-      
-      return {
-        personas: this.context.personas,
-        nextQuestion: null,
-        isComplete: true,
-        context: this.context
-      };
     } catch (error) {
       console.error('Error in generatePersonas:', error);
       throw error;
@@ -142,12 +181,12 @@ export class OpenAICustomerPersonaAgent implements CustomerPersonaAgent {
         .upsert({
           id: existingData?.id || this.context.id,
           project_id: this.context.projectId,
-          persona_profile: this.context.personas, 
-          market_research_context: this.context.marketResearchContext,
-          created_at: existingData?.id ? undefined : this.context.createdAt,
-          updated_at: this.context.updatedAt,
+          personas: this.context.personas,
+          market_research_context: this.context.marketResearchContext?.id || null,
+          created_at: this.context.createdAt,
+          updated_at: new Date().toISOString(),
           status: 'complete',
-          last_updated: this.context.updatedAt
+          last_updated: new Date().toISOString()
         }, {
           onConflict: 'id',
           ignoreDuplicates: false
@@ -208,8 +247,8 @@ export class OpenAICustomerPersonaAgent implements CustomerPersonaAgent {
       this.context = {
         id: data.id,
         projectId: data.project_id,
-        personas: data.persona_profile || [],
-        marketResearchContext: data.market_research_context,
+        personas: data.personas || [],
+        marketResearchContext: data.market_research_context ? { id: data.market_research_context } : null,
         createdAt: data.created_at,
         updatedAt: data.updated_at || data.last_updated
       };
