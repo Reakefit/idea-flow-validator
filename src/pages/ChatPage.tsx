@@ -30,6 +30,7 @@ const ChatPage = () => {
   const [agent, setAgent] = useState<OpenAIProblemUnderstandingAgent | null>(null);
   const [currentQuestion, setCurrentQuestion] = useState<string | null>(null);
   const [questionCount, setQuestionCount] = useState<number>(0);
+  const MAX_FOLLOW_UP_QUESTIONS = 2; // Increased from 1 to 2
 
   useEffect(() => {
     if (!user) {
@@ -213,8 +214,8 @@ const ChatPage = () => {
         }]);
       }
       
-      // Handle completion - either due to reaching max questions (2) or explicit completion
-      if (result.isComplete || questionCount >= 1) { // Max 2 questions (initial + 1 follow-up)
+      // Handle completion - either due to reaching max questions or explicit completion
+      if (result.isComplete || questionCount >= MAX_FOLLOW_UP_QUESTIONS) { // Changed from 1 to MAX_FOLLOW_UP_QUESTIONS
         // Update project status
         const { error } = await supabase
           .from('projects')
