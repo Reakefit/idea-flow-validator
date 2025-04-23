@@ -1,3 +1,4 @@
+
 import { Persona } from './types';
 import { CustomerPersona } from '@/types';
 
@@ -59,7 +60,7 @@ export function convertFromPersona(persona: Persona): any {
       income: persona.demographics.income,
       education: persona.demographics.education
     },
-    pain_points: persona.painPoints,
+    painPoints: persona.painPoints, // Fixed: Changed pain_points to painPoints
     goals: persona.goals,
     behaviors: persona.behaviors,
     created_at: persona.createdAt,

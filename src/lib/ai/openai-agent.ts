@@ -153,7 +153,7 @@ ${this.context.keyInsights.map(i => {
       return `- ${i}`;
     }
   }
-  const insight = i as KeyInsInsight;
+  const insight = i as KeyInsight;
   return `- ${insight.insight} (${insight.confidence} confidence, source: ${insight.source})`;
 }).join('\n')}
 Current Metadata:
